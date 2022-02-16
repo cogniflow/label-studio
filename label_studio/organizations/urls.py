@@ -34,4 +34,7 @@ urlpatterns = [
     # invite
     path('api/invite', api.OrganizationInviteAPI.as_view(), name='organization-reset-token'),
     path('api/invite/reset-token', api.OrganizationResetTokenAPI.as_view(), name='organization-reset-token'),
+
+    # create org
+    path('api/organization/create', api.OrgHandler.as_view(), name='organization-create'),
 ]

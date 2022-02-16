@@ -1,6 +1,7 @@
 """This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
 """
 import logging
+from django.http import QueryDict
 
 from django.urls import reverse
 from django.conf import settings
@@ -21,6 +22,9 @@ from organizations.models import Organization
 from organizations.serializers import (
     OrganizationSerializer, OrganizationIdSerializer, OrganizationMemberUserSerializer, OrganizationInviteSerializer
 )
+
+from users import forms
+import json
 
 
 logger = logging.getLogger(__name__)
@@ -102,7 +106,8 @@ class OrganizationMemberListAPI(generics.ListAPIView):
         }
 
     def get_queryset(self):
-        org = generics.get_object_or_404(self.request.user.organizations, pk=self.kwargs[self.lookup_field])
+        org = Organization.objects.filter(pk=self.request.user.active_organization.id).get()
+
         return org.members.order_by('user__username')
 
 
@@ -181,3 +186,24 @@ class OrganizationResetTokenAPI(APIView):
         serializer = OrganizationInviteSerializer(data={'invite_url': invite_url, 'token': org.token})
         serializer.is_valid()
         return Response(serializer.data, status=201)
+
+
+class OrgHandler(APIView):
+
+    def post(self, request, *args, **kwargs):
+        user_data = json.loads(request.body.decode('utf-8'))
+        user_query_dict = QueryDict('email='+user_data['email']+'&password='+user_data['password'])
+        user_form = forms.UserSignupForm(user_query_dict)
+
+        if user_form.is_valid():
+            user = user_form.save()
+            user.username = user.email.split('@')[0]
+            user.save()
+
+            org_title = user.username + '\'s' + ' organization'
+            org = Organization.create_organization(created_by=user, title=org_title)
+            org.add_user(user)
+            user.active_organization = org
+            user.save(update_fields=['active_organization'])
+
+            return Response({ "org_id": org.id}, 201)

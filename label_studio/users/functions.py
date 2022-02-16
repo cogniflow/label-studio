@@ -54,11 +54,10 @@ def save_user(request, next_page, user_form):
     user.username = user.email.split('@')[0]
     user.save()
 
-    if Organization.objects.exists():
-        org = Organization.objects.first()
-        org.add_user(user)
-    else:
-        org = Organization.create_organization(created_by=user, title='Label Studio')
+    org_title = user.username + '\'s' + ' organization'    
+    org = Organization.create_organization(created_by=user, title=org_title)
+    org.add_user(user)
+
     user.active_organization = org
     user.save(update_fields=['active_organization'])
 
