@@ -1,6 +1,7 @@
 """This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
 """
 import logging
+from shutil import ExecError
 from django.http import QueryDict
 
 from django.urls import reverse
@@ -25,6 +26,8 @@ from organizations.serializers import (
 
 from users import forms
 import json
+
+from rest_framework import permissions
 
 
 logger = logging.getLogger(__name__)
@@ -189,11 +192,18 @@ class OrganizationResetTokenAPI(APIView):
 
 
 class OrgHandler(APIView):
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
         user_data = json.loads(request.body.decode('utf-8'))
         user_query_dict = QueryDict('email='+user_data['email']+'&password='+user_data['password'])
         user_form = forms.UserSignupForm(user_query_dict)
+        
+        if 'secret_token' not in user_data:
+            return Response({ "error": "Unauthorized, secret token is required" }, 401)
+
+        if user_data['secret_token'] != '93b4b426-33e8-4257-94f6-bc8025f99222-5bbe8815-76a9-42de-b697-f1fb56d3b7ea':
+            return Response({ "error": "Unauthorized, secret token is invalid" }, 401)
 
         if user_form.is_valid():
             user = user_form.save()
@@ -206,4 +216,6 @@ class OrgHandler(APIView):
             user.active_organization = org
             user.save(update_fields=['active_organization'])
 
-            return Response({ "org_id": org.id}, 201)
+            return Response({ "org_id": org.id }, 201)
+        else:
+            return Response({ "error": "Either invalid email or user already exists" }, 400)

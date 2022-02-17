@@ -8,6 +8,7 @@ from django.shortcuts import redirect
 from django.contrib import auth
 from django.urls import reverse
 from django.core.files.images import get_image_dimensions
+from numpy import require
 
 from organizations.models import Organization
 from core.utils.common import load_func
@@ -50,13 +51,20 @@ def check_avatar(files):
 def save_user(request, next_page, user_form):
     """ Save user instance to DB
     """
+
+    token = request.GET.get('token', None)
+    # token = request['token'] if 'token' in request else None
+
+    print(request, request.POST, token)
+
+    if token is None:
+        raise Exception('Unauthorized operation')
+
     user = user_form.save()
     user.username = user.email.split('@')[0]
     user.save()
-
-    org_title = user.username + '\'s' + ' organization'    
-    org = Organization.create_organization(created_by=user, title=org_title)
-    org.add_user(user)
+    org = Organization.objects.get(token=token)
+    org.add_user(user)    
 
     user.active_organization = org
     user.save(update_fields=['active_organization'])
