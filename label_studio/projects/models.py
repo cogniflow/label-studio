@@ -188,7 +188,11 @@ class Project(ProjectMixin, models.Model):
         help_text='Minimum number of completed tasks after which model training is started',
     )
 
-    control_weights = JSONField(_('control weights'), null=True, default=dict, help_text='Weights for control tags')
+    control_weights = JSONField(_('control weights'), null=True, default=dict, help_text="Dict of weights for each control tag in metric calculation. Each control tag (e.g. label or choice) will "
+                                                                                         "have it's own key in control weight dict with weight for each label and overall weight." 
+                                                                                         "For example, if bounding box annotation with control tag named my_bbox should be included with 0.33 weight in agreement calculation, "
+                                                                                         "and the first label Car should be twice more important than Airplaine, then you have to need the specify: "
+                                                                                         "{'my_bbox': {'type': 'RectangleLabels', 'labels': {'Car': 1.0, 'Airplaine': 0.5}, 'overall': 0.33}")
     model_version = models.TextField(
         _('model version'), blank=True, null=True, default='', help_text='Machine learning model version'
     )
@@ -506,11 +510,12 @@ class Project(ProjectMixin, models.Model):
             )
 
         # validate labels consistency
-        labels_from_config = get_all_labels(config_string)
+        labels_from_config, dynamic_label_from_config = get_all_labels(config_string)
         created_labels = self.summary.created_labels
         for control_tag_from_data, labels_from_data in created_labels.items():
             # Check if labels created in annotations, and their control tag has been removed
-            if labels_from_data and control_tag_from_data not in labels_from_config:
+            if labels_from_data and ((control_tag_from_data not in labels_from_config) and (
+                    control_tag_from_data not in dynamic_label_from_config)):
                 raise LabelStudioValidationErrorSentryIgnored(
                     f'There are {sum(labels_from_data.values(), 0)} annotation(s) created with tag '
                     f'"{control_tag_from_data}", you can\'t remove it'
@@ -519,8 +524,9 @@ class Project(ProjectMixin, models.Model):
             if not set(labels_from_data).issubset(set(labels_from_config_by_tag)):
                 different_labels = list(set(labels_from_data).difference(labels_from_config_by_tag))
                 diff_str = '\n'.join(f'{l} ({labels_from_data[l]} annotations)' for l in different_labels)
-                if strict is True:
-                    raise LabelStudioValidationErrorSentryIgnored(f'These labels still exist in annotations:\n{diff_str}')
+                if (strict is True) and (control_tag_from_data not in dynamic_label_from_config):
+                    raise LabelStudioValidationErrorSentryIgnored(
+                        f'These labels still exist in annotations:\n{diff_str}')
                 else:
                     logger.warning(f'project_id={self.id} inconsistent labels in config and annotations: {diff_str}')
 
@@ -534,7 +540,7 @@ class Project(ProjectMixin, models.Model):
         return {'deleted_predictions': count}
 
     def get_updated_weights(self):
-        outputs = self.get_parsed_config()
+        outputs = self.get_parsed_config(autosave_cache=False)
         control_weights = {}
         exclude_control_types = ('Filter',)
         for control_name in outputs:
@@ -706,14 +712,14 @@ class Project(ProjectMixin, models.Model):
     def max_tasks_file_size():
         return settings.TASKS_MAX_FILE_SIZE
 
-    def get_control_tags_from_config(self):
-        return self.get_parsed_config()
+    def get_parsed_config(self, autosave_cache=True):
+        if self.parsed_label_config is None:
+            self.parsed_label_config = parse_config(self.label_config)
 
-    def get_parsed_config(self):
-        if self.parsed_label_config:
-            return self.parsed_label_config
+            # if autosave_cache:
+            #    Project.objects.filter(id=self.id).update(parsed_label_config=self.parsed_label_config)
 
-        return parse_config(self.label_config)
+        return self.parsed_label_config
 
     def get_counters(self):
         """Method to get extra counters data from Manager method with_counts()
@@ -871,7 +877,7 @@ class ProjectSummary(models.Model):
             self.common_data_columns = list(sorted(set(self.common_data_columns) & common_data_columns))
         logger.debug(f'summary.all_data_columns = {self.all_data_columns}')
         logger.debug(f'summary.common_data_columns = {self.common_data_columns}')
-        self.save()
+        self.save(update_fields=['all_data_columns', 'common_data_columns'])
 
     def remove_data_columns(self, tasks):
         all_data_columns = dict(self.all_data_columns)
@@ -895,7 +901,7 @@ class ProjectSummary(models.Model):
             self.common_data_columns = common_data_columns
         logger.debug(f'summary.all_data_columns = {self.all_data_columns}')
         logger.debug(f'summary.common_data_columns = {self.common_data_columns}')
-        self.save()
+        self.save(update_fields=['all_data_columns', 'common_data_columns', ])
 
     def _get_annotation_key(self, result):
         result_type = result.get('type', None)
@@ -955,7 +961,7 @@ class ProjectSummary(models.Model):
         logger.debug(f'summary.created_labels = {labels}')
         self.created_annotations = created_annotations
         self.created_labels = labels
-        self.save()
+        self.save(update_fields=['created_annotations', 'created_labels'])
 
     def remove_created_annotations_and_labels(self, annotations):
         created_annotations = dict(self.created_annotations)
@@ -989,4 +995,4 @@ class ProjectSummary(models.Model):
         logger.debug(f'summary.created_labels = {labels}')
         self.created_annotations = created_annotations
         self.created_labels = labels
-        self.save()
+        self.save(update_fields=['created_annotations', 'created_labels'])
