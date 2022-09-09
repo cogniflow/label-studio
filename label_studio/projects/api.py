@@ -17,6 +17,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.views import exception_handler
+from django.http import Http404
 
 from core.utils.common import temporary_disconnect_all_signals
 from core.label_config import config_essential_data_has_changed
@@ -34,7 +35,7 @@ from webhooks.models import WebhookAction
 
 from core.permissions import all_permissions, ViewClassPermission
 from core.utils.common import (
-    get_object_with_check_and_log, paginator)
+    get_object_with_check_and_log, paginator, paginator_help)
 from core.utils.exceptions import ProjectExistException, LabelStudioDatabaseException
 from core.utils.io import find_dir, find_file, read_yaml
 
@@ -129,7 +130,7 @@ class ProjectListAPI(generics.ListCreateAPIView):
 
     def get_queryset(self):
         projects = Project.objects.filter(organization=self.request.user.active_organization)
-        return ProjectManager.with_counts_annotate(projects)
+        return ProjectManager.with_counts_annotate(projects).prefetch_related('members', 'created_by')
 
     def get_serializer_context(self):
         context = super(ProjectListAPI, self).get_serializer_context()
@@ -392,7 +393,11 @@ class ProjectTaskListAPI(generics.ListCreateAPIView,
     def filter_queryset(self, queryset):
         project = generics.get_object_or_404(Project.objects.for_user(self.request.user), pk=self.kwargs.get('pk', 0))
         tasks = Task.objects.filter(project=project)
-        return paginator(tasks, self.request)
+        page = paginator(tasks, self.request)
+        if page:
+            return page
+        else:
+            raise Http404
 
     def delete(self, request, *args, **kwargs):
         project = generics.get_object_or_404(Project.objects.for_user(self.request.user), pk=self.kwargs['pk'])
@@ -401,6 +406,7 @@ class ProjectTaskListAPI(generics.ListCreateAPIView,
         emit_webhooks_for_instance(request.user.active_organization, None, WebhookAction.TASKS_DELETED, task_ids)
         return Response(data={'tasks': task_ids}, status=204)
 
+    @swagger_auto_schema(**paginator_help('tasks', 'Projects'))
     def get(self, *args, **kwargs):
         return super(ProjectTaskListAPI, self).get(*args, **kwargs)
 
@@ -429,6 +435,9 @@ class TemplateListAPI(generics.ListAPIView):
         configs = []
         for config_file in pathlib.Path(annotation_templates_dir).glob('**/*.yml'):
             config = read_yaml(config_file)
+            if settings.VERSION_EDITION == 'Community':
+                if settings.VERSION_EDITION.lower() != config.get('type', 'community'):
+                    continue
             if config.get('image', '').startswith('/static') and settings.HOSTNAME:
                 # if hostname set manually, create full image urls
                 config['image'] = settings.HOSTNAME + config['image']
