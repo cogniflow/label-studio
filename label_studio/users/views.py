@@ -15,6 +15,10 @@ from core.middleware import enforce_csrf_checks
 from users.functions import proceed_registration
 from organizations.models import Organization
 from organizations.forms import OrganizationSignupForm
+from rest_framework.response import Response
+from users.models import User
+import json
+import os
 
 
 logger = logging.getLogger()
@@ -121,3 +125,33 @@ def user_account(request):
         'user_profile_form': form,
         'token': token
     })
+
+
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([])
+def change_password(request):
+    user_data = json.loads(request.body.decode('utf-8'))
+
+    if 'secret_token' not in user_data:
+        return Response({ "error": "Unauthorized, secret token is required" }, 401)
+
+    if user_data['secret_token'] != os.environ.get('LABEL_STUDIO_SECRET_TOKEN'):
+        return Response({ "error": "Unauthorized, secret token is invalid" }, 401)
+
+
+    user = User.objects.filter(email=user_data["email"]).get()
+
+    if not user:
+        return Response({ "error": "User does not exist" }, 400)
+
+
+    user.set_password(user_data["password"])
+
+    user.save()
+
+
+    return Response({ "message": "OK"}, 201)
