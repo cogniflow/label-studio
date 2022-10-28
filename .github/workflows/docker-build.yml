@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - release_*
     paths:
       - deploy/**
       - label_studio/**
@@ -100,3 +101,31 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DOCKER_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+  deploy_eks:
+    name: "Deploy image in EKS"
+    runs-on: ubuntu-latest
+    if: contains(github.ref, 'release_test')
+    env:
+      AWS_REGION: us-east-2
+      CLUSTER_NAME: dev-cogniflow-cluster
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: kubeconfig dev
+        id: kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }} --kubeconfig .kubeconfig
+          echo "::set-output name=KUBE_CONFIG_DATA::$(cat .kubeconfig)"
+      - name: deploy to cluster
+        uses: kodermax/kubectl-aws-eks@master
+        env:
+          KUBE_CONFIG_DATA: ${{ steps.kubeconfig.outputs.KUBE_CONFIG_DATA }}
+          ECR_REGISTRY: ${{ env.REGISTRY }}
+          ECR_REPOSITORY: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ env.DOCKER_TAG }}
+        with:
+          args: set image deployment/$ECR_REPOSITORY $ECR_REPOSITORY=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
