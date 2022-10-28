@@ -104,6 +104,7 @@ jobs:
     name: "Deploy image in EKS"
     runs-on: ubuntu-latest
     if: contains(github.ref, 'release_test')
+    needs: [docker_build_and_push]
     env:
       AWS_REGION: us-east-2
       CLUSTER_NAME: dev-cogniflow-cluster
@@ -118,7 +119,7 @@ jobs:
         id: kubeconfig
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }} --kubeconfig .kubeconfig
-          echo "::set-output name=KUBE_CONFIG_DATA::$(cat .kubeconfig)"
+          echo "::set-output name=KUBE_CONFIG_DATA::$(cat .kubeconfig | base64)"
       - name: deploy to cluster
         uses: kodermax/kubectl-aws-eks@master
         env:
