@@ -138,4 +138,4 @@ jobs:
           NAMESPACE: cogniflow
           DEPLOYMENT_NAME: label-studio
         with:
-          args: set image deployment/$DEPLOYMENT_NAME $ECR_REPOSITORY=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -n $NAMESPACE
+          args: set image deployment/$DEPLOYMENT_NAME $DEPLOYMENT_NAME=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -n $NAMESPACE
