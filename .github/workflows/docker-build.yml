@@ -135,5 +135,7 @@ jobs:
           ECR_REPOSITORY: ${{ env.IMAGE_NAME }}
           IMAGE_TAG: ${{ env.DOCKER_TAG }}
           KUBECTL_VERSION: "v1.21.0"
+          NAMESPACE: cogniflow
+          DEPLOYMENT_NAME: label-studio
         with:
-          args: set image deployment/$ECR_REPOSITORY $ECR_REPOSITORY=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          args: set image deployment/$DEPLOYMENT_NAME $ECR_REPOSITORY=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -n $NAMESPACE
