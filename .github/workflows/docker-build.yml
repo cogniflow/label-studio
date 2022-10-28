@@ -122,7 +122,9 @@ jobs:
         id: kubeconfig
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }} --kubeconfig .kubeconfig
-          echo "KUBE_CONFIG_DATA=$(cat .kubeconfig | base64)" >> $GITHUB_ENV
+          echo 'KUBE_CONFIG_DATA<<EOF' >> $GITHUB_ENV
+          cat .kubeconfig | base64 >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
       - name: test kubeconfig
         run: echo $(echo QWxhZGRpbjpvcGVuIHNlc2FtZQ== | base64 --decode)
       - name: deploy to cluster
