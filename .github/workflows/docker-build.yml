@@ -16,7 +16,6 @@ env:
   # increment it in case if you need to reset cache
   CACHE_NAME_PREFIX: v1
   NODE: '14'
-  
   DOCKER_CLI_EXPERIMENTAL: enabled
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
