@@ -99,7 +99,8 @@ def user_login(request):
 
     return render(request, 'users/user_login.html', {
         'form': form,
-        'next': next_page
+        'next': next_page,
+        'cogniflow_app_url': os.environ.get('COGNIFLOW_APP_URL')
     })
 
 
