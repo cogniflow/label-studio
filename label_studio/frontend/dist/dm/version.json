@@ -1,6 +1,6 @@
 {
-  "message": "Merge pull request #25 from heartexlabs/feature/dev-1094\n\nDEV-1094",
-  "commit": "8d1ae18af9fb5755973ff8a7f11498b6d2a9c091",
+  "message": "Fix tasks selection (#44)",
+  "commit": "97e33ac0a9b0ea09398b00d7916671ca76cf2a71",
   "branch": "master",
-  "date": "2022-01-24T08:59:49Z"
+  "date": "2022-04-13T13:55:17Z"
 }

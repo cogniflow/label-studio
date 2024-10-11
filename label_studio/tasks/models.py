@@ -9,6 +9,7 @@ import numbers
 from urllib.parse import urljoin, quote
 
 from django.conf import settings
+from django.contrib.auth.models import AnonymousUser
 from django.db import models, connection, transaction
 from django.db.models import Q, F, When, Count, Case, Subquery, OuterRef, Value
 from django.db.models.functions import Coalesce
@@ -22,11 +23,11 @@ from django.dispatch import receiver, Signal
 from django.core.files.storage import default_storage
 from rest_framework.exceptions import ValidationError
 
-from model_utils import FieldTracker
-
+from core.feature_flags import flag_set
 from core.utils.common import find_first_one_to_one_related_field_by_prefix, string_is_url, load_func
 from core.utils.params import get_env
 from core.label_config import SINGLE_VALUED_TAGS
+from core.current_request import get_current_request
 from data_manager.managers import PreparedTaskManager, TaskManager
 from core.bulk_update_utils import bulk_update
 from data_import.models import FileUpload
@@ -52,6 +53,9 @@ class Task(TaskMixin, models.Model):
                                 help_text='Project ID for this task')
     created_at = models.DateTimeField(_('created at'), auto_now_add=True, help_text='Time a task was created')
     updated_at = models.DateTimeField(_('updated at'), auto_now=True, help_text='Last time a task was updated')
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='updated_tasks',
+                                   on_delete=models.SET_NULL, null=True, verbose_name=_('updated by'),
+                                   help_text='Last annotator or reviewer who updated this task')
     is_labeled = models.BooleanField(_('is_labeled'), default=False,
                                      help_text='True if the number of annotations for this task is greater than or equal '
                                                'to the number of maximum_completions for the project', db_index=True)
@@ -61,6 +65,8 @@ class Task(TaskMixin, models.Model):
         'data_import.FileUpload', on_delete=models.SET_NULL, null=True, blank=True, related_name='tasks',
         help_text='Uploaded file used as data source for this task'
     )
+    inner_id = models.BigIntegerField(_('inner id'), default=0, db_index=True, null=True,
+                                      help_text='Internal task ID in the project, starts with 1')
     updates = ['is_labeled']
 
     objects = TaskManager()  # task manager by default
@@ -71,6 +77,7 @@ class Task(TaskMixin, models.Model):
         ordering = ['-updated_at']
         indexes = [
             models.Index(fields=['project', 'is_labeled']),
+            models.Index(fields=['id', 'project']),
             models.Index(fields=['id', 'overlap']),
             models.Index(fields=['overlap']),
             models.Index(fields=['is_labeled'])
@@ -234,7 +241,7 @@ class Task(TaskMixin, models.Model):
     def completed_annotations(self):
         """Annotations that we take into account when set completed status to the task"""
         if self.project.skip_queue == self.project.SkipQueue.IGNORE_SKIPPED:
-            return self.annotations.filter(Q(ground_truth=False))
+            return self.annotations
         else:
             return self.annotations.filter(Q_finished_annotations)
 
@@ -253,6 +260,16 @@ class Task(TaskMixin, models.Model):
 
     def ensure_unique_groundtruth(self, annotation_id):
         self.annotations.exclude(id=annotation_id).update(ground_truth=False)
+
+    def save(self, *args, **kwargs):
+        if flag_set('ff_back_2070_inner_id_12052022_short', self.project.organization.created_by):
+            if self.inner_id == 0:
+                task = Task.objects.filter(project=self.project).order_by("-inner_id").first()
+                max_inner_id = 1
+                if task:
+                    max_inner_id = task.inner_id
+                self.inner_id = max_inner_id + 1
+        super().save(*args, **kwargs)
 
 
 pre_bulk_create = Signal(providing_args=["objs", "batch_size"])
@@ -283,7 +300,6 @@ class Annotation(AnnotationMixin, models.Model):
     """ Annotations & Labeling results
     """
     objects = AnnotationManager()
-    tracker = FieldTracker(fields=['ground_truth', 'result'])
 
     result = JSONField('result', null=True, default=None, help_text='The main value of annotator work - '
                                                                     'labeling result in JSON format')
@@ -314,6 +330,7 @@ class Annotation(AnnotationMixin, models.Model):
         db_table = 'task_completion'
         indexes = [
             models.Index(fields=['task', 'ground_truth']),
+            models.Index(fields=['task', 'completed_by']),
             models.Index(fields=['was_cancelled']),
             models.Index(fields=['ground_truth']),
             models.Index(fields=['created_at']),
@@ -347,16 +364,25 @@ class Annotation(AnnotationMixin, models.Model):
             summary = self.task.project.summary
             summary.remove_created_annotations_and_labels([self])
 
+    def update_task(self):
+        update_fields = ['updated_at']
+
+        # updated_by
+        request = get_current_request()
+        if request:
+            self.task.updated_by = request.user
+            update_fields.append('updated_by')
+
+        self.task.save(update_fields=update_fields)
+
     def save(self, *args, **kwargs):
         result = super().save(*args, **kwargs)
-        # set updated_at field of task to now()
-        self.task.save(update_fields=['updated_at'])
+        self.update_task()
         return result
 
     def delete(self, *args, **kwargs):
         result = super().delete(*args, **kwargs)
-        # set updated_at field of task to now()
-        self.task.save(update_fields=['updated_at'])
+        self.update_task()
         return result
 
 
@@ -437,7 +463,7 @@ class Prediction(models.Model):
         elif isinstance(result, dict):
             # "value" from result
             # TODO: validate value fields according to project.label_config
-            for tag, tag_info in project.get_control_tags_from_config().items():
+            for tag, tag_info in project.get_parsed_config().items():
                 tag_type = tag_info['type'].lower()
                 if tag_type in result:
                     return [{
@@ -449,7 +475,7 @@ class Prediction(models.Model):
 
         elif isinstance(result, (str, numbers.Integral)):
             # If result is of integral type, it could be a representation of data from single-valued control tags (e.g. Choices, Rating, etc.)  # noqa
-            for tag, tag_info in project.get_control_tags_from_config().items():
+            for tag, tag_info in project.get_parsed_config().items():
                 tag_type = tag_info['type'].lower()
                 if tag_type in SINGLE_VALUED_TAGS and isinstance(result, SINGLE_VALUED_TAGS[tag_type]):
                     return [{
@@ -463,17 +489,28 @@ class Prediction(models.Model):
         else:
             raise ValidationError(f'Incorrect format {type(result)} for prediction result {result}')
 
+    def update_task(self):
+        update_fields = ['updated_at']
+
+        # updated_by
+        request = get_current_request()
+        if request:
+            self.task.updated_by = request.user
+            update_fields.append('updated_by')
+
+        self.task.save(update_fields=update_fields)
+
     def save(self, *args, **kwargs):
         # "result" data can come in different forms - normalize them to JSON
         self.result = self.prepare_prediction_result(self.result, self.task.project)
         # set updated_at field of task to now()
-        self.task.save(update_fields=['updated_at'])
+        self.update_task()
         return super(Prediction, self).save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
         result = super().delete(*args, **kwargs)
         # set updated_at field of task to now()
-        self.task.save(update_fields=['updated_at'])
+        self.update_task()
         return result
 
     class Meta:
@@ -586,8 +623,6 @@ def update_is_labeled_after_removing_annotation(sender, instance, **kwargs):
 def delete_draft(sender, instance, **kwargs):
     task = instance.task
     query_args = {'task': instance.task, 'annotation': instance}
-    if instance.completed_by is not None:
-        query_args['user'] = instance.completed_by
     drafts = AnnotationDraft.objects.filter(**query_args)
     num_drafts = drafts.count()
     drafts.delete()
