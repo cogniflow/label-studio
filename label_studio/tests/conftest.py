@@ -13,6 +13,7 @@ import tempfile
 from moto import mock_s3
 from copy import deepcopy
 from pathlib import Path
+from datetime import timedelta
 
 from django.conf import settings
 from projects.models import Project
@@ -20,6 +21,8 @@ from tasks.models import Task
 from users.models import User
 from organizations.models import Organization
 from types import SimpleNamespace
+
+from label_studio.core.utils.params import get_bool_env, get_env
 
 # if we haven't this package, pytest.ini::env doesn't work 
 try:
@@ -30,7 +33,7 @@ except ImportError:
 
 from .utils import (
     create_business, signin, gcs_client_mock, ml_backend_mock, register_ml_backend_mock, azure_client_mock,
-    redis_client_mock, make_project
+    redis_client_mock, make_project, import_from_url_mock
 )
 
 boto3.set_stream_logger('botocore.credentials', logging.DEBUG)
@@ -39,6 +42,11 @@ boto3.set_stream_logger('botocore.credentials', logging.DEBUG)
 @pytest.fixture(autouse=False)
 def enable_csrf():
     settings.USE_ENFORCE_CSRF_CHECKS = True
+
+
+@pytest.fixture(autouse=False)
+def label_stream_history_limit():
+    settings.LABEL_STREAM_HISTORY_LIMIT = 1
 
 
 @pytest.fixture(autouse=True)
@@ -152,6 +160,12 @@ def redis_client():
 @pytest.fixture(autouse=True)
 def ml_backend():
     with ml_backend_mock() as m:
+        yield m
+
+
+@pytest.fixture(name='import_from_url')
+def import_from_url():
+    with import_from_url_mock() as m:
         yield m
 
 
@@ -419,3 +433,9 @@ def local_files_document_root_tempdir(settings):
 def local_files_document_root_subdir(settings):
     tempdir = Path(tempfile.gettempdir()) / Path('files')
     settings.LOCAL_FILES_DOCUMENT_ROOT = str(tempdir)
+
+
+@pytest.fixture(name="testing_session_timeouts")
+def set_testing_session_timeouts(settings):
+    settings.MAX_SESSION_AGE = int(get_env('MAX_SESSION_AGE', timedelta(seconds=5).total_seconds()))
+    settings.MAX_TIME_BETWEEN_ACTIVITY = int(get_env('MAX_TIME_BETWEEN_ACTIVITY', timedelta(seconds=2).total_seconds()))

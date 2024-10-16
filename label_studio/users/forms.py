@@ -31,6 +31,7 @@ class LoginForm(forms.Form):
     email = forms.CharField(label='User') if settings.USE_USERNAME_FOR_LOGIN\
         else forms.EmailField(label='Email')
     password = forms.CharField(widget=forms.PasswordInput())
+    persist_session = forms.BooleanField(widget=forms.CheckboxInput(), required=False)
 
     def clean(self, *args, **kwargs):
         cleaned = super(LoginForm, self).clean()
@@ -47,7 +48,8 @@ class LoginForm(forms.Form):
             user = auth.authenticate(email=email, password=password)
 
         if user and user.is_active:
-            return {'user': user}
+            persist_session = cleaned.get('persist_session', False)
+            return {'user': user, 'persist_session': persist_session}
         else:
             raise forms.ValidationError(INVALID_USER_ERROR)
 
@@ -57,6 +59,7 @@ class UserSignupForm(forms.Form):
     password = forms.CharField(max_length=PASS_MAX_LENGTH,
                                error_messages={'required': PASS_LENGTH_ERR},
                                widget=forms.TextInput(attrs={'type': 'password'}))
+    allow_newsletters = forms.BooleanField(required=False)
 
     def clean_password(self):
         password = self.cleaned_data['password']
@@ -84,7 +87,10 @@ class UserSignupForm(forms.Form):
         cleaned = self.cleaned_data
         password = cleaned['password']
         email = cleaned['email'].lower()
-        user = User.objects.create_user(email, password)
+        allow_newsletters = None
+        if 'allow_newsletters' in cleaned:
+            allow_newsletters = cleaned['allow_newsletters']
+        user = User.objects.create_user(email, password, allow_newsletters=allow_newsletters)
         return user
 
 
@@ -93,5 +99,5 @@ class UserProfileForm(forms.ModelForm):
     """
     class Meta:
         model = User
-        fields = ('first_name', 'last_name', 'phone')
+        fields = ('first_name', 'last_name', 'phone', 'allow_newsletters')
 

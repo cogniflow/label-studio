@@ -3,6 +3,8 @@
 import ujson as json
 
 import json
+import re
+import io
 import pytest
 import requests_mock
 import requests
@@ -43,7 +45,20 @@ def register_ml_backend_mock(m, url='http://localhost:9090', predictions=None, h
     m.post(f'{url}/train', text=json.dumps({'status': 'ok', 'job_id': train_job_id}))
     m.post(f'{url}/predict', text=json.dumps(predictions or {}))
     m.post(f'{url}/webhook', text=json.dumps({}))
+    m.post(f'{url}/versions', text=json.dumps({'versions': ["1", "2"]}))
     return m
+
+
+@contextmanager
+def import_from_url_mock(**kwargs):
+    with requests_mock.Mocker(real_http=True) as m:
+        url='https://data.heartextest.net'
+
+        with open('./tests/test_suites/samples/test_1.csv', 'rb') as f:
+            matcher = re.compile('data.heartextest.net/test_1.csv')
+
+            m.get(matcher, body=f, headers={'Content-Length': '100'})
+            yield m
 
 
 class _TestJob(object):
@@ -60,7 +75,7 @@ def email_mock():
 
 @contextmanager
 def gcs_client_mock():
-    from io_storages.gcs.models import google_storage
+    from google.cloud import storage as google_storage
     from collections import namedtuple
 
     File = namedtuple('File', ['name'])
@@ -69,6 +84,7 @@ def gcs_client_mock():
         def __init__(self, bucket_name, key, is_json):
             self.key = key
             self.bucket_name = bucket_name
+            self.name = f"{bucket_name}/{key}"
             self.is_json = is_json
         def download_as_string(self):
             data = f'test_blob_{self.key}'
@@ -79,6 +95,11 @@ def gcs_client_mock():
             print(f'String {string} uploaded to bucket {self.bucket_name}')
         def generate_signed_url(self, **kwargs):
             return f'https://storage.googleapis.com/{self.bucket_name}/{self.key}'
+        def download_as_bytes(self):
+            data = f'test_blob_{self.key}'
+            if self.is_json:
+                return json.dumps({'str_field': data, 'int_field': 123, 'dict_field': {'one': 'wow', 'two': 456}})
+            return data
 
     class DummyGCSBucket:
         def __init__(self, bucket_name, is_json, **kwargs):
@@ -93,6 +114,12 @@ def gcs_client_mock():
         def get_bucket(self, bucket_name):
             is_json = bucket_name.endswith('_JSON')
             return DummyGCSBucket(bucket_name, is_json)
+
+        def list_blobs(self, bucket_name, prefix):
+            is_json = bucket_name.endswith('_JSON')
+            return [DummyGCSBlob(bucket_name, 'abc', is_json),
+                    DummyGCSBlob(bucket_name, 'def', is_json),
+                    DummyGCSBlob(bucket_name, 'ghi', is_json)]
 
     with mock.patch.object(google_storage, 'Client', return_value=DummyGCSClient()):
         yield
@@ -187,9 +214,10 @@ def create_business(user):
 
 
 def make_annotation(config, task_id):
-    from tasks.models import Annotation
+    from tasks.models import Annotation, Task
+    task = Task.objects.get(pk=task_id)
 
-    return Annotation.objects.create(task_id=task_id, **config)
+    return Annotation.objects.create(project_id=task.project_id, task_id=task_id, **config)
 
 
 def make_prediction(config, task_id):

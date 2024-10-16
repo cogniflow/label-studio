@@ -5,6 +5,7 @@ import logging
 import os
 from pathlib import Path
 import re
+from urllib.parse import quote
 
 from django.conf import settings
 from django.db import models
@@ -13,13 +14,14 @@ from django.dispatch import receiver
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
-from io_storages.base_models import (
-      ExportStorage,
-      ExportStorageLink,
-      ImportStorage,
-      ImportStorageLink,
-)
 from tasks.models import Annotation
+from io_storages.base_models import (
+    ExportStorage,
+    ExportStorageLink,
+    ImportStorage,
+    ImportStorageLink,
+    ProjectStorageMixin
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ class LocalFilesMixin(models.Model):
                                   'please check docs: https://labelstud.io/guide/storage.html#Local-storage')
 
 
-class LocalFilesImportStorage(LocalFilesMixin, ImportStorage):
+class LocalFilesImportStorageBase(LocalFilesMixin, ImportStorage):
     url_scheme = 'https'
 
     def can_resolve_url(self, url):
@@ -59,7 +61,9 @@ class LocalFilesImportStorage(LocalFilesMixin, ImportStorage):
     def iterkeys(self):
         path = Path(self.path)
         regex = re.compile(str(self.regex_filter)) if self.regex_filter else None
-        for file in path.rglob('*'):
+        # For better control of imported tasks, file reading has been changed to ascending order of filenames.
+        # In other words, the task IDs are sorted by filename order.
+        for file in sorted(path.rglob('*'), key=os.path.basename):
             if file.is_file():
                 key = file.name
                 if regex and not regex.match(key):
@@ -74,7 +78,7 @@ class LocalFilesImportStorage(LocalFilesMixin, ImportStorage):
             # {settings.HOSTNAME}/data/local-files?d=<path/to/local/dir>
             document_root = Path(settings.LOCAL_FILES_DOCUMENT_ROOT)
             relative_path = str(path.relative_to(document_root))
-            return {settings.DATA_UNDEFINED_NAME: f'{settings.HOSTNAME}/data/local-files/?d={str(relative_path)}'}
+            return {settings.DATA_UNDEFINED_NAME: f'{settings.HOSTNAME}/data/local-files/?d={quote(str(relative_path))}'}
 
         try:
             with open(path, encoding='utf8') as f:
@@ -91,6 +95,14 @@ class LocalFilesImportStorage(LocalFilesMixin, ImportStorage):
     def scan_and_create_links(self):
         return self._scan_and_create_links(LocalFilesImportStorageLink)
 
+    class Meta:
+        abstract = True
+
+
+class LocalFilesImportStorage(ProjectStorageMixin, LocalFilesImportStorageBase):
+    class Meta:
+        abstract = False
+
 
 class LocalFilesExportStorage(ExportStorage, LocalFilesMixin):
 
@@ -100,7 +112,7 @@ class LocalFilesExportStorage(ExportStorage, LocalFilesMixin):
 
         # get key that identifies this object in storage
         key = LocalFilesExportStorageLink.get_key(annotation)
-        key = os.path.join(self.path, f"{key}.json")
+        key = os.path.join(self.path, f"{key}")
 
         # put object into storage
         with open(key, mode='w') as f:
@@ -120,7 +132,7 @@ class LocalFilesExportStorageLink(ExportStorageLink):
 
 @receiver(post_save, sender=Annotation)
 def export_annotation_to_local_files(sender, instance, **kwargs):
-    project = instance.task.project
+    project = instance.project
     if hasattr(project, 'io_storages_localfilesexportstorages'):
         for storage in project.io_storages_localfilesexportstorages.all():
             logger.debug(f'Export {instance} to Local Storage {storage}')

@@ -98,7 +98,7 @@ class DataExport(object):
         """Generate two files: meta info and result file and store them locally for logging"""
         filename_results = os.path.join(settings.EXPORT_DIR, name + '.json')
         filename_info = os.path.join(settings.EXPORT_DIR, name + '-info.json')
-        annotation_number = Annotation.objects.filter(task__project=project).count()
+        annotation_number = Annotation.objects.filter(project=project).count()
         try:
             platform_version = version.get_git_version()
         except:
@@ -146,7 +146,7 @@ class DataExport(object):
         # prepare for saving
         now = datetime.now()
         data = json.dumps(tasks, ensure_ascii=False)
-        md5 = hashlib.md5(json.dumps(data).encode('utf-8')).hexdigest()
+        md5 = hashlib.md5(json.dumps(data).encode('utf-8')).hexdigest()   # nosec
         name = 'project-' + str(project.id) + '-at-' + now.strftime('%Y-%m-%d-%H-%M') + f'-{md5[0:8]}'
 
         input_json = DataExport.save_export_files(project, now, get_args, data, md5, name)

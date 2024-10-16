@@ -3,6 +3,7 @@ node_modules
 *.pyc
 *.ipynb
 __pycache__
+.local/
 
 # docs
 __generated__
@@ -48,7 +49,6 @@ archive
 *.idea/*
 .vscode/*
 pyrightconfig.json
-tags
 tags.temp
 mydatabase
 label_studio.sqlite3
@@ -69,3 +69,13 @@ deploy/pgsql/certs/*
 1/*
 */*/1/*
 label_studio/tavern-output.json
+docker-compose.override.yml
+
+.config/*
+.python_history
+.viminfo
+.bash_history
+
+# if you want to include feature flags - use 
+# git add -f label_studio/feature_flags.json
+label_studio/feature_flags.json

@@ -5,18 +5,23 @@ import logging
 import json
 import boto3
 
-from botocore.exceptions import NoCredentialsError
+from core.redis import start_job_async_or_sync
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from django.dispatch import receiver
-from django.db.models.signals import post_save, post_delete, pre_delete
+from django.db.models.signals import post_save, pre_delete
 
-from io_storages.base_models import ImportStorage, ImportStorageLink, ExportStorage, ExportStorageLink
-from io_storages.utils import get_uri_via_regex
 from io_storages.s3.utils import get_client_and_resource, resolve_s3_url
 from tasks.validation import ValidationError as TaskValidationError
 from tasks.models import Annotation
+from io_storages.base_models import (
+    ExportStorage,
+    ExportStorageLink,
+    ImportStorage,
+    ImportStorageLink,
+    ProjectStorageMixin
+)
 
 logger = logging.getLogger(__name__)
 logging.getLogger('botocore').setLevel(logging.CRITICAL)
@@ -102,7 +107,7 @@ class S3StorageMixin(models.Model):
         abstract = True
 
 
-class S3ImportStorage(S3StorageMixin, ImportStorage):
+class S3ImportStorageBase(S3StorageMixin, ImportStorage):
 
     url_scheme = 's3'
 
@@ -167,6 +172,14 @@ class S3ImportStorage(S3StorageMixin, ImportStorage):
     def generate_http_url(self, url):
         return resolve_s3_url(url, self.get_client(), self.presign, expires_in=self.presign_ttl * 60)
 
+    class Meta:
+        abstract = True
+
+
+class S3ImportStorage(ProjectStorageMixin, S3ImportStorageBase):
+    class Meta:
+        abstract = False
+
 
 class S3ExportStorage(S3StorageMixin, ExportStorage):
 
@@ -200,13 +213,19 @@ class S3ExportStorage(S3StorageMixin, ExportStorage):
         S3ExportStorageLink.objects.filter(storage=self, annotation=annotation).delete()
 
 
-@receiver(post_save, sender=Annotation)
-def export_annotation_to_s3_storages(sender, instance, **kwargs):
-    project = instance.task.project
+def async_export_annotation_to_s3_storages(annotation):
+    project = annotation.project
     if hasattr(project, 'io_storages_s3exportstorages'):
         for storage in project.io_storages_s3exportstorages.all():
-            logger.debug(f'Export {instance} to S3 storage {storage}')
-            storage.save_annotation(instance)
+            logger.debug(f'Export {annotation} to S3 storage {storage}')
+            storage.save_annotation(annotation)
+
+
+@receiver(post_save, sender=Annotation)
+def export_annotation_to_s3_storages(sender, instance, **kwargs):
+    storages = getattr(instance.project, 'io_storages_s3exportstorages', None)
+    if storages and storages.exists():  # avoid excess jobs in rq
+        start_job_async_or_sync(async_export_annotation_to_s3_storages, instance)
 
 
 @receiver(pre_delete, sender=Annotation)
@@ -215,7 +234,7 @@ def delete_annotation_from_s3_storages(sender, instance, **kwargs):
     for link in links:
         storage = link.storage
         if storage.can_delete_objects:
-            logger.debug(f'Delete {instance} from S3 storage {storage}')
+            logger.debug(f'Delete {instance} from S3 storage {storage}')  # nosec
             storage.delete_annotation(instance)
 
 

@@ -4,24 +4,24 @@ import logging
 import ujson as json
 import numbers
 
-from django.db import transaction
-from drf_dynamic_fields import DynamicFieldsMixin
+from django.db import transaction, IntegrityError
 from django.conf import settings
 
-from rest_framework import serializers
+from rest_framework import serializers, generics
 from rest_framework.serializers import ModelSerializer
 from rest_framework.exceptions import ValidationError
 from rest_framework.fields import SkipField
 from rest_framework.settings import api_settings
 from rest_flex_fields import FlexFieldsModelSerializer
 
-from core.feature_flags import flag_set
 from projects.models import Project
 from tasks.models import Task, Annotation, AnnotationDraft, Prediction
 from tasks.validation import TaskValidator
-from core.utils.common import get_object_with_check_and_log, retry_database_locked
+from tasks.exceptions import AnnotationDuplicateError
+from core.utils.common import retry_database_locked
 from core.label_config import replace_task_data_undefined_with_config_field
 from users.serializers import UserSerializer
+from users.models import User
 from core.utils.common import load_func
 
 logger = logging.getLogger(__name__)
@@ -45,34 +45,31 @@ class ListAnnotationSerializer(serializers.ListSerializer):
     pass
 
 
-class AnnotationSerializer(ModelSerializer):
+class CompletedByDMSerializer(UserSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'first_name', 'last_name', 'avatar', 'email', 'initials']
+
+
+class AnnotationSerializer(FlexFieldsModelSerializer):
     """
     """
     created_username = serializers.SerializerMethodField(default='', read_only=True, help_text='Username string')
     created_ago = serializers.CharField(default='', read_only=True, help_text='Time delta from creation time')
+    completed_by = serializers.PrimaryKeyRelatedField(required=False, queryset=User.objects.all())
+    unique_id = serializers.CharField(required=False, write_only=True)
 
-    @classmethod
-    def many_init(cls, *args, **kwargs):
-        kwargs['child'] = cls(*args, **kwargs)
-        return ListAnnotationSerializer(*args, **kwargs)
-
-    def to_representation(self, instance):
-        annotation = super(AnnotationSerializer, self).to_representation(instance)
-        if self.context.get('completed_by', '') == 'full':
-            annotation['completed_by'] = UserSerializer(instance.completed_by).data
-        return annotation
-
-    def get_fields(self):
-        fields = super(AnnotationSerializer, self).get_fields()
-        excluded = []
-
-        # serializer for export format
-        if self.context.get('export_mode', False):
-            excluded += ['created_username', 'created_ago', 'task',
-                         'was_cancelled', 'ground_truth', 'result_count']
-
-        [fields.pop(field, None) for field in excluded]
-        return fields
+    def create(self, *args, **kwargs):
+        try:
+            return super().create(*args, **kwargs)
+        except IntegrityError as e:
+            errors = [
+                'UNIQUE constraint failed: task_completion.unique_id',
+                'duplicate key value violates unique constraint "task_completion_unique_id_key"',
+            ]
+            if any([error in str(e) for error in errors]):
+                raise AnnotationDuplicateError()
+            raise
 
     def validate_result(self, value):
         data = value
@@ -93,7 +90,7 @@ class AnnotationSerializer(ModelSerializer):
         user = annotation.completed_by
         if not user:
             return ""
-            
+
         name = user.first_name
         if len(user.last_name):
             name = name + " " + user.last_name
@@ -104,6 +101,7 @@ class AnnotationSerializer(ModelSerializer):
     class Meta:
         model = Annotation
         exclude = ['prediction', 'result_count']
+        expandable_fields = {'completed_by': (CompletedByDMSerializer,)}
 
 
 class TaskSimpleSerializer(ModelSerializer):
@@ -130,13 +128,6 @@ class TaskSimpleSerializer(ModelSerializer):
 class BaseTaskSerializer(FlexFieldsModelSerializer):
     """ Task Serializer with project scheme configs validation
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.context.get('include_annotations', True) and 'annotations' not in self.fields:
-            self.fields['annotations'] = AnnotationSerializer(
-                many=True, read_only=False, required=False, context=self.context
-            )
-
     def project(self, task=None):
         """ Take the project from context
         """
@@ -144,7 +135,7 @@ class BaseTaskSerializer(FlexFieldsModelSerializer):
             project = self.context['project']
         elif 'view' in self.context and 'project_id' in self.context['view'].kwargs:
             kwargs = self.context['view'].kwargs
-            project = get_object_with_check_and_log(Project, kwargs['project_id'])
+            project = generics.get_object_or_404(Project, kwargs['project_id'])
         elif task:
             project = task.project
         else:
@@ -246,11 +237,16 @@ class BaseTaskSerializerBulk(serializers.ListSerializer):
             elif isinstance(completed_by, dict):
                 if 'email' not in completed_by:
                     raise ValidationError(f"It's expected to have 'email' field in 'completed_by' data in annotations")
+
                 email = completed_by['email']
                 if email not in members_email_to_id:
-                    raise ValidationError(f"Unknown annotator's email {email}")
-                # overwrite an actual member ID
-                annotation['completed_by_id'] = members_email_to_id[email]
+                    if settings.ALLOW_IMPORT_TASKS_WITH_UNKNOWN_EMAILS:
+                        annotation['completed_by_id'] = default_user.id
+                    else:
+                        raise ValidationError(f"Unknown annotator's email {email}")
+                else:
+                    # overwrite an actual member ID
+                    annotation['completed_by_id'] = members_email_to_id[email]
 
             # old style annotators specification - try to find them by ID
             elif isinstance(completed_by, int) and completed_by in members_ids:
@@ -297,9 +293,12 @@ class BaseTaskSerializerBulk(serializers.ListSerializer):
 
             # identify max inner id
             tasks = Task.objects.filter(project=self.project)
-            max_inner_id = (tasks.order_by("-inner_id")[0].inner_id + 1) if tasks else 1
+            prev_inner_id = tasks.order_by("-inner_id")[0].inner_id if tasks else 0
+            max_inner_id = (prev_inner_id + 1) if prev_inner_id else 1
 
             for i, task in enumerate(validated_tasks):
+                cancelled_annotations = len([ann for ann in task_annotations[i] if ann.get('was_cancelled', False)])
+                total_annotations = len(task_annotations[i]) - cancelled_annotations
                 t = Task(
                     project=self.project,
                     data=task['data'],
@@ -307,7 +306,10 @@ class BaseTaskSerializerBulk(serializers.ListSerializer):
                     overlap=max_overlap,
                     is_labeled=len(task_annotations[i]) >= max_overlap,
                     file_upload_id=task.get('file_upload_id'),
-                    inner_id=max_inner_id + i
+                    inner_id=None if prev_inner_id is None else max_inner_id + i,
+                    total_predictions=len(task_predictions[i]),
+                    total_annotations=total_annotations,
+                    cancelled_annotations=cancelled_annotations
                 )
                 db_tasks.append(t)
 
@@ -332,18 +334,23 @@ class BaseTaskSerializerBulk(serializers.ListSerializer):
                 for annotation in annotations:
                     if not isinstance(annotation, dict):
                         continue
-                        
+
                     # support both "ground_truth" and "ground_truth"
                     ground_truth = annotation.pop('ground_truth', True)
                     was_cancelled = annotation.pop('was_cancelled', False)
                     lead_time = annotation.pop('lead_time', None)
 
-                    db_annotations.append(Annotation(task=self.db_tasks[i],
-                                                     ground_truth=ground_truth,
-                                                     was_cancelled=was_cancelled,
-                                                     completed_by_id=annotation['completed_by_id'],
-                                                     result=annotation['result'],
-                                                     lead_time=lead_time))
+                    body = {
+                        'task': self.db_tasks[i],
+                        'project': self.project,
+                        'ground_truth': ground_truth,
+                        'was_cancelled': was_cancelled,
+                        'completed_by_id': annotation['completed_by_id'],
+                        'result': annotation['result'],
+                        'lead_time': lead_time
+                    }
+                    body = self.add_annotation_fields(body, user, 'imported')
+                    db_annotations.append(Annotation(**body))
 
             # add predictions
             last_model_version = None
@@ -360,8 +367,8 @@ class BaseTaskSerializerBulk(serializers.ListSerializer):
                             prediction_score = float(prediction_score)
                         except ValueError as exc:
                             logger.error(
-                                f'Can\'t upload prediction score: should be in float format. Reason: {exc}.'
-                                f'Fallback to score=None', exc_info=True)
+                                f'Can\'t upload prediction score: should be in float format.'
+                                f'Fallback to score=None')
                             prediction_score = None
 
                     last_model_version = prediction.get('model_version', 'undefined')
@@ -396,20 +403,29 @@ class BaseTaskSerializerBulk(serializers.ListSerializer):
                 self.project.model_version = last_model_version
                 self.project.save()
 
-        self.post_process_annotations(self.db_annotations)
+        self.post_process_annotations(user, self.db_annotations, 'imported')
+        self.post_process_tasks(self.project.id, [t.id for t in self.db_tasks])
         return db_tasks
 
     @staticmethod
-    def post_process_annotations(db_annotations):
+    def post_process_annotations(user, db_annotations, action):
         pass
+
+    @staticmethod
+    def post_process_tasks(user, db_tasks):
+        pass
+
+    @staticmethod
+    def add_annotation_fields(body, user, action):
+        return body
 
     class Meta:
         model = Task
         fields = "__all__"
-    
+
 
 TaskSerializer = load_func(settings.TASK_SERIALIZER)
-        
+
 
 class TaskWithAnnotationsSerializer(TaskSerializer):
     """
@@ -421,7 +437,7 @@ class TaskWithAnnotationsSerializer(TaskSerializer):
     class Meta:
         model = Task
         list_serializer_class = load_func(settings.TASK_SERIALIZER_BULK)
-        
+
         exclude = ()
 
 
@@ -452,7 +468,7 @@ class TaskWithAnnotationsAndPredictionsSerializer(TaskSerializer):
     predictions = PredictionSerializer(many=True, default=[], read_only=True)
     annotations = serializers.SerializerMethodField(default=[], read_only=True)
 
-    def get_annotations(self, task): 
+    def get_annotations(self, task):
         annotations = task.annotations
 
         if 'request' in self.context:
@@ -543,6 +559,14 @@ class TaskWithAnnotationsAndPredictionsAndDraftsSerializer(TaskSerializer):
 
 
 class NextTaskSerializer(TaskWithAnnotationsAndPredictionsAndDraftsSerializer):
+    unique_lock_id = serializers.SerializerMethodField()
+
+    def get_unique_lock_id(self, task):
+        user = self.context['request'].user
+        lock = task.locks.filter(user=user).first()
+        if lock:
+            return lock.unique_id
+
     def get_predictions(self, task):
         project = task.project
         if not project.show_collab_predictions:
@@ -554,8 +578,8 @@ class NextTaskSerializer(TaskWithAnnotationsAndPredictionsAndDraftsSerializer):
 
     def get_annotations(self, task):
         result = []
-        annotations = super().get_annotations(task)
-        if 'request' in self.context and hasattr(self.context['request'], 'user'):
+        if self.context.get('annotations', False):
+            annotations = super().get_annotations(task)
             user = self.context['request'].user
             for annotation in annotations:
                 if annotation.get('completed_by') == user.id:

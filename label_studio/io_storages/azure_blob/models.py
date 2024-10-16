@@ -4,6 +4,7 @@ import logging
 import json
 import re
 
+from core.redis import start_job_async_or_sync
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from django.db import models
@@ -14,8 +15,14 @@ from django.db.models.signals import post_save
 from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
 from django.dispatch import receiver
 from core.utils.params import get_env
-from io_storages.base_models import ImportStorage, ImportStorageLink, ExportStorage, ExportStorageLink
 from tasks.models import Annotation
+from io_storages.base_models import (
+    ExportStorage,
+    ExportStorageLink,
+    ImportStorage,
+    ImportStorageLink,
+    ProjectStorageMixin
+)
 
 
 logger = logging.getLogger(__name__)
@@ -65,7 +72,7 @@ class AzureBlobStorageMixin(models.Model):
         return container
 
 
-class AzureBlobImportStorage(ImportStorage, AzureBlobStorageMixin):
+class AzureBlobImportStorageBase(ImportStorage, AzureBlobStorageMixin):
     url_scheme = 'azure-blob'
 
     presign = models.BooleanField(
@@ -123,6 +130,14 @@ class AzureBlobImportStorage(ImportStorage, AzureBlobStorageMixin):
                                       expiry=expiry)
         return 'https://' + self.get_account_name() + '.blob.core.windows.net/' + container + '/' + blob + '?' + sas_token
 
+    class Meta:
+        abstract = True
+
+
+class AzureBlobImportStorage(ProjectStorageMixin, AzureBlobImportStorageBase):
+    class Meta:
+        abstract = False
+
 
 class AzureBlobExportStorage(ExportStorage, AzureBlobStorageMixin):
 
@@ -142,13 +157,19 @@ class AzureBlobExportStorage(ExportStorage, AzureBlobStorageMixin):
         AzureBlobExportStorageLink.create(annotation, self)
 
 
-@receiver(post_save, sender=Annotation)
-def export_annotation_to_azure_storages(sender, instance, **kwargs):
-    project = instance.task.project
+def async_export_annotation_to_azure_storages(annotation):
+    project = annotation.project
     if hasattr(project, 'io_storages_azureblobexportstorages'):
         for storage in project.io_storages_azureblobexportstorages.all():
-            logger.debug(f'Export {instance} to Azure Blob storage {storage}')
-            storage.save_annotation(instance)
+            logger.debug(f'Export {annotation} to Azure Blob storage {storage}')
+            storage.save_annotation(annotation)
+
+
+@receiver(post_save, sender=Annotation)
+def export_annotation_to_azure_storages(sender, instance, **kwargs):
+    storages = getattr(instance.project, 'io_storages_azureblobexportstorages', None)
+    if storages and storages.exists():  # avoid excess jobs in rq
+        start_job_async_or_sync(async_export_annotation_to_azure_storages, instance)
 
 
 class AzureBlobImportStorageLink(ImportStorageLink):

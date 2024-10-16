@@ -1,6 +1,7 @@
 """This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
 """
 import logging
+from time import time
 
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect, reverse
@@ -11,6 +12,7 @@ from rest_framework.authtoken.models import Token
 
 from users import forms
 from core.utils.common import load_func
+from users.functions import login
 from core.middleware import enforce_csrf_checks
 from users.functions import proceed_registration
 from organizations.models import Organization
@@ -55,6 +57,9 @@ def user_signup(request):
         if settings.DISABLE_SIGNUP_WITHOUT_LINK is True:
             if not(token and organization and token == organization.token):
                 raise PermissionDenied()
+        else:
+            if token and organization and token != organization.token:
+                raise PermissionDenied()
 
         user_form = forms.UserSignupForm(request.POST)
         organization_form = OrganizationSignupForm(request.POST)
@@ -89,7 +94,11 @@ def user_login(request):
         form = login_form(request.POST)
         if form.is_valid():
             user = form.cleaned_data['user']
-            auth.login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            if form.cleaned_data['persist_session'] is not True:
+                # Set the session to expire when the browser is closed
+                request.session['keep_me_logged_in'] = False
+                request.session.set_expiry(0)
 
             # user is organization member
             org_pk = Organization.find_by_user(user).pk
@@ -119,7 +128,7 @@ def user_account(request):
         if form.is_valid():
             form.save()
             return redirect(reverse('user-account'))
-
+        
     return render(request, 'users/user_account.html', {
         'settings': settings,
         'user': user,

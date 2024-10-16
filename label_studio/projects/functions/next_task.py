@@ -4,39 +4,32 @@ import logging
 from django.db.models import BooleanField, Case, Count, Exists, Max, OuterRef, Value, When, Q
 from django.db.models.fields import DecimalField
 from django.conf import settings
+from core.feature_flags import flag_set
 import numpy as np
 
 from core.utils.common import conditional_atomic
 from tasks.models import Annotation, Task
+from projects.models import LabelStreamHistory
+from projects.functions.stream_history import add_stream_history
 
 logger = logging.getLogger(__name__)
 
 
-def _get_random_unlocked(task_query, user, upper_limit=None):
-    # get random task from task query, ignoring locked tasks
-    n = task_query.count()
-    if n > 0:
-        upper_limit = upper_limit or n
-        random_indices = np.random.permutation(upper_limit)
-        task_query_only = task_query.only('overlap', 'id')
+def get_next_task_logging_level(user):
+    level = logging.DEBUG
+    if flag_set('fflag_fix_back_dev_4185_next_task_additional_logging_long', user=user):
+        level = logging.INFO
+    return level
 
-        for i in random_indices:
-            try:
-                task = task_query_only[int(i)]
-            except IndexError as exc:
-                logger.error(
-                    f'Task query out of range for {int(i)}, count={task_query_only.count()}. ' f'Reason: {exc}',
-                    exc_info=True,
-                )
-            except Exception as exc:
-                logger.error(exc, exc_info=True)
-            else:
-                try:
-                    task = Task.objects.select_for_update(skip_locked=True).get(pk=task.id)
-                    if not task.has_lock(user):
-                        return task
-                except Task.DoesNotExist:
-                    logger.debug('Task with id {} locked'.format(task.id))
+
+def _get_random_unlocked(task_query, user, upper_limit=None):
+    for task in task_query.order_by('?').only('id')[:settings.RANDOM_NEXT_TASK_SAMPLE_SIZE]:
+        try:
+            task = Task.objects.select_for_update(skip_locked=True).get(pk=task.id)
+            if not task.has_lock(user):
+                return task
+        except Task.DoesNotExist:
+            logger.debug('Task with id {} locked'.format(task.id))
 
 
 def _get_first_unlocked(tasks_query, user):
@@ -46,6 +39,7 @@ def _get_first_unlocked(tasks_query, user):
             task = Task.objects.select_for_update(skip_locked=True).get(pk=task_id)
             if not task.has_lock(user):
                 return task
+
         except Task.DoesNotExist:
             logger.debug('Task with id {} locked'.format(task_id))
 
@@ -141,14 +135,15 @@ def _try_uncertainty_sampling(tasks, project, user_solved_tasks_array, user, pre
 
 
 def get_not_solved_tasks_qs(user, project, prepared_tasks, assigned_flag, queue_info):
-    user_solved_tasks_array = user.annotations.filter(task__project=project, task__isnull=False)
-
-    if project.skip_queue == project.SkipQueue.REQUEUE_FOR_ME:
-        user_solved_tasks_array = user_solved_tasks_array.filter(was_cancelled=False)
-        queue_info += ' Requeued for me from cancelled tasks '
-
+    user_solved_tasks_array = user.annotations.filter(project=project, task__isnull=False)
     user_solved_tasks_array = user_solved_tasks_array.distinct().values_list('task__pk', flat=True)
     not_solved_tasks = prepared_tasks.exclude(pk__in=user_solved_tasks_array)
+
+    # annotation can't have postponed draft, so skip annotation__project filter
+    postponed_drafts = user.drafts.filter(task__project=project, was_postponed=True)
+    if postponed_drafts.exists():
+        user_postponed_tasks = postponed_drafts.distinct().values_list('task__pk', flat=True)
+        not_solved_tasks = not_solved_tasks.exclude(pk__in=user_postponed_tasks)
 
     # if annotator is assigned for tasks, he must to solve it regardless of is_labeled=True
     if not assigned_flag:
@@ -160,13 +155,6 @@ def get_not_solved_tasks_qs(user, project, prepared_tasks, assigned_flag, queue_
         logger.debug(f'User={user} tries overlap first from prepared tasks')
         _, not_solved_tasks = _try_tasks_with_overlap(not_solved_tasks)
         queue_info += 'Show overlap first'
-
-    if project.skip_queue == project.SkipQueue.REQUEUE_FOR_ME:
-        # Ordering works different for sqlite and postgresql, details: https://code.djangoproject.com/ticket/19726
-        if settings.DJANGO_DB == settings.DJANGO_DB_SQLITE:
-            not_solved_tasks = not_solved_tasks.order_by('annotations__was_cancelled', 'id')
-        else:
-            not_solved_tasks = not_solved_tasks.order_by('-annotations__was_cancelled', 'id')
 
     return not_solved_tasks, user_solved_tasks_array, queue_info
 
@@ -204,6 +192,37 @@ def get_next_task_without_dm_queue(user, project, not_solved_tasks, assigned_fla
             queue_info += (' & ' if queue_info else '') + 'Breadth first queue'
 
     return next_task, use_task_lock, queue_info
+
+
+def skipped_queue(next_task, prepared_tasks, project, user, queue_info):
+    if not next_task and project.skip_queue == project.SkipQueue.REQUEUE_FOR_ME:
+        q = Q(project=project, task__isnull=False, was_cancelled=True, task__is_labeled=False)
+        skipped_tasks = user.annotations.filter(q).order_by('updated_at').values_list('task__pk', flat=True)
+        if skipped_tasks.exists():
+            preserved_order = Case(*[When(pk=pk, then=pos) for pos, pk in enumerate(skipped_tasks)])
+            skipped_tasks = prepared_tasks.filter(pk__in=skipped_tasks).order_by(preserved_order)
+            next_task = _get_first_unlocked(skipped_tasks, user)
+            queue_info = 'Skipped queue'
+
+    return next_task, queue_info
+
+
+def postponed_queue(next_task, prepared_tasks, project, user, queue_info):
+    if not next_task:
+        q = Q(task__project=project, task__isnull=False, was_postponed=True, task__is_labeled=False)
+        if flag_set('fflag_fix_back_lsdv_1044_check_annotations_24012023_short', user):
+            q &= ~Q(task__annotations__completed_by=user)
+
+        postponed_tasks = user.drafts.filter(q).order_by('updated_at').values_list('task__pk', flat=True)
+        if postponed_tasks.exists():
+            preserved_order = Case(*[When(pk=pk, then=pos) for pos, pk in enumerate(postponed_tasks)])
+            postponed_tasks = prepared_tasks.filter(pk__in=postponed_tasks).order_by(preserved_order)
+            next_task = _get_first_unlocked(postponed_tasks, user)
+            if next_task is not None:
+                next_task.allow_postpone = False
+            queue_info = f'Postponed draft queue'
+
+    return next_task, queue_info
 
 
 def get_next_task(user, prepared_tasks, project, dm_queue, assigned_flag=None):
@@ -246,10 +265,61 @@ def get_next_task(user, prepared_tasks, project, dm_queue, assigned_flag=None):
                 logger.debug(f'User={user} tries random sampling from prepared tasks')
                 next_task = _get_random_unlocked(not_solved_tasks, user)
 
+
+        next_task, queue_info = postponed_queue(next_task, prepared_tasks, project, user, queue_info)
+
+        next_task, queue_info = skipped_queue(next_task, prepared_tasks, project, user, queue_info)
+
         if next_task and use_task_lock:
             # set lock for the task with TTL 3x time more then current average lead time (or 1 hour by default)
             next_task.set_lock(user)
 
-        logger.debug(f'get_next_task finished. next_task: {next_task}, queue_info: {queue_info}')
+        logger.log(
+            get_next_task_logging_level(user),
+            f'get_next_task finished. next_task: {next_task}, queue_info: {queue_info}'
+        )
+
+        # debug for critical overlap issue
+        if next_task and flag_set('fflag_fix_back_dev_4185_next_task_additional_logging_long', user):
+            try:
+                count = next_task.annotations.filter(was_cancelled=False).count()
+                task_overlap_reached = count >= next_task.overlap
+                global_overlap_reached = count >= project.maximum_annotations
+                locks = next_task.locks.count() > project.maximum_annotations - next_task.annotations.count()
+                if next_task.is_labeled or task_overlap_reached or global_overlap_reached or locks:
+                    from tasks.serializers import TaskSimpleSerializer
+
+                    local = dict(locals())
+                    local.pop('prepared_tasks', None)
+                    local.pop('user_solved_tasks_array', None)
+                    local.pop('not_solved_tasks', None)
+
+                    task = TaskSimpleSerializer(next_task).data
+                    task.pop('data', None)
+                    task.pop('predictions', None)
+                    for i, a in enumerate(task['annotations']):
+                        task['annotations'][i] = dict(task['annotations'][i])
+                        task['annotations'][i].pop('result', None)
+
+                    project = next_task.project
+                    project_data = {
+                        'maximum_annotations': project.maximum_annotations,
+                        'skip_queue': project.skip_queue,
+                        'sampling': project.sampling,
+                        'show_ground_truth_first': project.show_ground_truth_first,
+                        'show_overlap_first': project.show_overlap_first,
+                        'overlap_cohort_percentage': project.overlap_cohort_percentage,
+                        'project_id': project.id,
+                        'title': project.title
+                    }
+                    logger.error(f'DEBUG INFO: get_next_task is_labeled/overlap: '
+                                 f'LOCALS ==> {local} :: PROJECT ==> {project_data} :: '
+                                 f'NEXT_TASK ==> {task}')
+            except Exception as e:
+                logger.error(f'get_next_task is_labeled/overlap try/except: {str(e)}')
+                pass
+
+        add_stream_history(next_task, user, project)
         return next_task, queue_info
+
 

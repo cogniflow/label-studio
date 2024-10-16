@@ -1,6 +1,7 @@
 """This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
 """
 import uuid
+from time import time
 
 from django import forms
 from django.conf import settings
@@ -11,6 +12,7 @@ from django.core.files.images import get_image_dimensions
 from numpy import require
 
 from organizations.models import Organization
+from core.utils.contextlog import ContextLog
 from core.utils.common import load_func
 
 
@@ -69,8 +71,12 @@ def save_user(request, next_page, user_form):
     user.active_organization = org
     user.save(update_fields=['active_organization'])
 
+    request.advanced_json = {
+        'email': user.email, 'allow_newsletters': user.allow_newsletters,
+        'update-notifications': 1, 'new-user': 1
+    }
     redirect_url = next_page if next_page else reverse('projects:project-index')
-    auth.login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
     return redirect(redirect_url)
 
 
@@ -82,3 +88,8 @@ def proceed_registration(request, user_form, organization_form, next_page):
     response = save_user(request, next_page, user_form)
 
     return response
+
+
+def login(request, *args, **kwargs):
+    request.session['last_login'] = time()
+    return auth.login(request, *args, **kwargs)

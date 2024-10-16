@@ -1,12 +1,12 @@
 ---
 title: Label
 type: tags
-order: 410
+order: 411
 meta_title: Label Tag for Single Label Tags
 meta_description: Customize Label Studio with the Label tag to assign a single label to regions in a task for machine learning and data science projects.
 ---
 
-Label tag represents a single label. Use with the Labels tag, including BrushLabels, EllipseLabels, HyperTextLabels, KeyPointLabels, and other Labels tags to specify the value of a specific label.
+The `Label` tag represents a single label. Use with the `Labels` tag, including `BrushLabels`, `EllipseLabels`, `HyperTextLabels`, `KeyPointLabels`, and other `Labels` tags to specify the value of a specific label.
 
 ### Parameters
 
@@ -24,10 +24,13 @@ Label tag represents a single label. Use with the Labels tag, including BrushLab
 | [background] | <code>string</code> | <code>&quot;#36B37E&quot;</code> | Background color of an active label in hexadecimal |
 | [selectedColor] | <code>string</code> | <code>&quot;#ffffff&quot;</code> | Color of text in an active label in hexadecimal |
 | [granularity] | <code>symbol</code> \| <code>word</code> |  | Set control based on symbol or word selection (only for Text) |
+| [html] | <code>string</code> |  | HTML code is used to display label button instead of raw text provided by `value` (should be properly escaped) |
 
 ### Example
+
+Basic named entity recognition labeling configuration for text
+
 ```html
-<!--Basic named entity recognition labeling configuration for text-->
 <View>
   <Labels name="type" toName="txt-1">
     <Label alias="B" value="Brand" />
