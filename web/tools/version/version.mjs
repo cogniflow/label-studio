@@ -131,4 +131,6 @@ const versionLib = async () => {
 
 versionLib().then(() => {
   console.log("Versioning complete");
+}).catch((error) => {
+  console.error("Versioning failed", error);
 });

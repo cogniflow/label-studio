@@ -32,6 +32,7 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LS_DIR=/label-studio \
+    HOME=/label-studio \
     PIP_CACHE_DIR=$HOME/.cache \
     POETRY_CACHE_DIR=$HOME/.poetry-cache \
     POETRY_VIRTUALENVS_CREATE=false \
