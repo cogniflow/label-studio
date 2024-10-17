@@ -2,7 +2,7 @@
 ARG NODE_VERSION=18
 
 ################################ Stage: frontend-builder (build frontend assets)
-FROM --platform=${BUILDPLATFORM} node:${NODE_VERSION} AS frontend-builder
+FROM node:18 AS frontend-builder
 ENV BUILD_NO_SERVER=true \
     BUILD_NO_HASH=true \
     BUILD_NO_CHUNKS=true \
@@ -87,7 +87,8 @@ COPY --chown=1001:0 licenses licenses
 COPY --chown=1001:0 label_studio label_studio
 COPY --chown=1001:0 deploy deploy
 
-COPY --chown=1001:0 --from=frontend-builder /label-studio/web/dist $LS_DIR/web/dist
+RUN mkdir -p $LS_DIR/web/dist
+COPY --chown=1001:0 --from=frontend-builder ./label-studio/dist $LS_DIR/web/dist
 
 RUN python3 label_studio/manage.py collectstatic --no-input && \
     chown -R 1001:0 $LS_DIR && \
