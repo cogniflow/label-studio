@@ -1,9 +1,9 @@
 version: "3.9"
-
 services:
   nginx:
     build: .
     image: heartexlabs/label-studio:latest
+    restart: unless-stopped
     ports:
       - "8080:8085"
       - "8081:8086"
@@ -11,15 +11,15 @@ services:
       - app
     environment:
       - LABEL_STUDIO_HOST=${LABEL_STUDIO_HOST:-}
-#   Optional: Specify SSL termination certificate & key
-#   Just drop your cert.pem and cert.key into folder 'deploy/nginx/certs'
-#      - NGINX_SSL_CERT=/certs/cert.pem
-#      - NGINX_SSL_CERT_KEY=/certs/cert.key
+    #   Optional: Specify SSL termination certificate & key
+    #   Just drop your cert.pem and cert.key into folder 'deploy/nginx/certs'
+    #      - NGINX_SSL_CERT=/certs/cert.pem
+    #      - NGINX_SSL_CERT_KEY=/certs/cert.key
     volumes:
       - ./mydata:/label-studio/data:rw
       - ./deploy/nginx/certs:/certs:ro
-#   Optional: Override nginx default conf
-#      - ./deploy/nginx/default.conf:/label-studio/deploy/nginx/default.conf
+    #   Optional: Override nginx default conf
+    #      - ./deploy/my.conf:/etc/nginx/nginx.conf
     command: nginx
 
   app:
@@ -27,11 +27,11 @@ services:
     tty: true
     build: .
     image: heartexlabs/label-studio:latest
-    command: label-studio-uwsgi
+    restart: unless-stopped
     expose:
       - "8080"
-    # depends_on:
-    #   - db
+    depends_on:
+      - db
     environment:
       - DJANGO_DB=default
       - POSTGRE_NAME=lblstudio
@@ -41,30 +41,27 @@ services:
       - POSTGRE_HOST=host.docker.internal
       - LABEL_STUDIO_HOST=${LABEL_STUDIO_HOST:-}
       - JSON_LOG=1
-#      - LOG_LEVEL=DEBUG
+    #      - LOG_LEVEL=DEBUG
     volumes:
       - ./mydata:/label-studio/data:rw
     extra_hosts:
       - "host.docker.internal:host-gateway"
       # keep in sync with deploy/docker-entrypoint.d/30-copy-static-data.sh
 
+  db:
+    image: postgres:11.5
+    hostname: db
+    restart: unless-stopped
+    # Optional: Enable TLS on PostgreSQL
+    # Just drop your server.crt and server.key into folder 'deploy/pgsql/certs'
+    # NOTE: Both files must have permissions u=rw (0600) or less
+    #    command: >
+    #      -c ssl=on
+    #      -c ssl_cert_file=/var/lib/postgresql/certs/server.crt
+    #      -c ssl_key_file=/var/lib/postgresql/certs/server.key
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    volumes:
+      - ${POSTGRES_DATA_DIR:-./postgres-data}:/var/lib/postgresql/data
+      - ./deploy/pgsql/certs:/var/lib/postgresql/certs:ro
 
-#   db:
-#     image: postgres:11.5
-#     hostname: db
-#     restart: always
-#     # Optional: Enable TLS on PostgreSQL
-#     # Just drop your server.crt and server.key into folder 'deploy/pgsql/certs'
-#     # NOTE: Both files must have permissions u=rw (0600) or less
-# #    command: >
-# #      -c ssl=on
-# #      -c ssl_cert_file=/var/lib/postgresql/certs/server.crt
-# #      -c ssl_key_file=/var/lib/postgresql/certs/server.key
-#     environment:
-#       - POSTGRES_HOST_AUTH_METHOD=trust
-#     volumes:
-#       - ${POSTGRES_DATA_DIR:-./postgres-data}:/var/lib/postgresql/data
-#       - ./deploy/pgsql/certs:/var/lib/postgresql/certs:ro
-
-volumes:
-  static: {}

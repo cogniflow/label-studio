@@ -6,6 +6,18 @@
         "decorators": ""
     },
     {
+        "url": "/sw\\.js",
+        "module": "core.views.serve_file",
+        "name": "",
+        "decorators": ""
+    },
+    {
+        "url": "/sw-fallback\\.js",
+        "module": "core.views.serve_file",
+        "name": "",
+        "decorators": ""
+    },
+    {
         "url": "/favicon\\.ico",
         "module": "django.views.generic.base.RedirectView",
         "name": "",
@@ -60,6 +72,12 @@
         "decorators": ""
     },
     {
+        "url": "/models/",
+        "module": "organizations.views.simple_view",
+        "name": "organizations:models",
+        "decorators": ""
+    },
+    {
         "url": "/api/organizations/",
         "module": "organizations.api.OrganizationListAPI",
         "name": "organizations:api:organization-list",
@@ -75,6 +93,12 @@
         "url": "/api/organizations/<int:pk>/memberships",
         "module": "organizations.api.OrganizationMemberListAPI",
         "name": "organizations:api:organization-memberships-list",
+        "decorators": ""
+    },
+    {
+        "url": "/api/organizations/<int:pk>/memberships/<int:user_pk>/",
+        "module": "organizations.api.OrganizationMemberDetailAPI",
+        "name": "organizations:api:organization-membership-detail",
         "decorators": ""
     },
     {
@@ -156,6 +180,24 @@
         "decorators": ""
     },
     {
+        "url": "/api/projects/<int:pk>/summary/reset/",
+        "module": "projects.api.ProjectSummaryResetAPI",
+        "name": "projects:api:project-summary-reset",
+        "decorators": ""
+    },
+    {
+        "url": "/api/projects/<int:pk>/imports/<int:import_pk>/",
+        "module": "projects.api.ProjectImportAPI",
+        "name": "projects:api:project-imports",
+        "decorators": ""
+    },
+    {
+        "url": "/api/projects/<int:pk>/reimports/<int:reimport_pk>/",
+        "module": "projects.api.ProjectReimportAPI",
+        "name": "projects:api:project-reimports",
+        "decorators": ""
+    },
+    {
         "url": "/api/projects/<int:pk>/tasks/",
         "module": "projects.api.ProjectTaskListAPI",
         "name": "projects:api:project-tasks-list",
@@ -228,6 +270,18 @@
         "decorators": ""
     },
     {
+        "url": "/tasks/<int:task_id>/presign/",
+        "module": "data_import.api.TaskPresignStorageData",
+        "name": "data_import:task-storage-data-presign",
+        "decorators": ""
+    },
+    {
+        "url": "/projects/<int:project_id>/presign/",
+        "module": "data_import.api.ProjectPresignStorageData",
+        "name": "data_import:project-storage-data-presign",
+        "decorators": ""
+    },
+    {
         "url": "/api/dm/views/",
         "module": "data_manager.api.ViewAPI",
         "name": "data_manager:api:view-list",
@@ -249,6 +303,18 @@
         "url": "/api/dm/views/reset\\.<format>/",
         "module": "data_manager.api.ViewAPI",
         "name": "data_manager:api:view-reset",
+        "decorators": ""
+    },
+    {
+        "url": "/api/dm/views/order/",
+        "module": "data_manager.api.ViewAPI",
+        "name": "data_manager:api:view-update-order",
+        "decorators": ""
+    },
+    {
+        "url": "/api/dm/views/order\\.<format>/",
+        "module": "data_manager.api.ViewAPI",
+        "name": "data_manager:api:view-update-order",
         "decorators": ""
     },
     {
@@ -354,6 +420,12 @@
         "decorators": ""
     },
     {
+        "url": "/api/projects/<int:pk>/exports/<int:export_pk>/convert",
+        "module": "data_export.api.ExportConvertAPI",
+        "name": "data_export:api-projects:project-exports-convert",
+        "decorators": ""
+    },
+    {
         "url": "/api/auth/export/",
         "module": "data_export.api.ProjectExportFilesAuthCheck",
         "name": "data_export:project-export-files-auth-check",
@@ -432,12 +504,6 @@
         "decorators": ""
     },
     {
-        "url": "/data/avatars/<path>",
-        "module": "django.views.static.serve",
-        "name": "",
-        "decorators": ""
-    },
-    {
         "url": "/api/current-user/reset-token/",
         "module": "users.api.UserResetTokenAPI",
         "name": "current-user-reset-token",
@@ -453,6 +519,12 @@
         "url": "/api/current-user/whoami",
         "module": "users.api.UserWhoAmIAPI",
         "name": "current-user-whoami",
+        "decorators": ""
+    },
+    {
+        "url": "/data/avatars/<path>",
+        "module": "django.views.static.serve",
+        "name": "",
         "decorators": ""
     },
     {
@@ -879,6 +951,12 @@
         "url": "/api/ml/<int:pk>/train",
         "module": "ml.api.MLBackendTrainAPI",
         "name": "ml:api:ml-train",
+        "decorators": ""
+    },
+    {
+        "url": "/api/ml/<int:pk>/predict/test",
+        "module": "ml.api.MLBackendPredictAPI",
+        "name": "ml:api:ml-predict-test",
         "decorators": ""
     },
     {

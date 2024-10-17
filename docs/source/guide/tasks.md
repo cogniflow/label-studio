@@ -3,11 +3,11 @@ title: Get data into Label Studio
 short: Import data
 type: guide
 tier: all
-order: 120
-order_enterprise: 105
+order: 157
+order_enterprise: 157
 meta_title: Import Data into Label Studio
 meta_description: Label and annotate data for your machine learning and data science projects using common file formats or the Label Studio JSON format.
-section: "Import and Export"
+section: "Import & Export"
 ---
 
 Get data into Label Studio by importing files, referencing URLs, or syncing with cloud or database storage. 
@@ -18,13 +18,44 @@ Get data into Label Studio by importing files, referencing URLs, or syncing with
 - If your data is stored locally, [import it into Label Studio](#Import-data-from-a-local-directory).
 - If your data contains predictions or pre-annotations, see [Import pre-annotated data into Label Studio](predictions.html).
 
+<div class="enterprise-only">
+
+!!! info Tip
+    If your data is stored in Google Cloud, AWS, or Azure, you can [import your unstructured data as a dataset in Label Studio Enterprise](dataset_create). 
+    
+    From here, you can use semantic search and similarity search to curate data for labeling, which can then be added to different projects as tasks. For more information, see [Data Discovery overview](dataset_overview).
+
+</div>
+
+<div class="opensource-only">
+
+!!! error Enterprise
+    If your data is stored in Google Cloud, AWS, or Azure, you can [import your unstructured data as a dataset in Label Studio Enterprise](https://docs.humansignal.com/guide/dataset_create). 
+    
+    From here, you can use semantic search and similarity search to curate data for labeling, which can then be added to different projects as tasks. For more information, see [Data Discovery overview](https://docs.humansignal.com/guide/dataset_overview).
+
+</div>
+
+## General guidelines for importing data
+
+* It’s best to keep about 100k tasks / 100k annotations per project for optimal performance.
+* Avoid frequent imports because each new import requires lengthy background operations. One import per 30 seconds will work without overloads.
+
+!!! warning
+    For large projects or business critical projects, do not [upload media files through the Label Studio interface](#Import-data-from-the-Label-Studio-UI). This is especially true for files such as images, audio, video, timeseries, etc.  
+    
+    Uploading data through the Label Studio UI works fine for proof of concept projects, but it is not recommended for larger projects. You will also face challenges when you want export your data or move it to another Label Studio instance or even just redeploy Label Studio. Finally, Label Studio is not designed as a hosting service at scale and does not have backups for imported media resources. 
+    
+    We strongly recommend that you configure [source storage](storage) instead.
+
+
 ## Types of data you can import into Label Studio
 
 You can import many types of data, including text, timeseries, audio, and image data. The file types supported depend on the type of data. 
 
 | Data type | Supported file types |
 | --- | --- |
-| Audio | .aiff, .au, .flac, .m4a, .mp3, .ogg, .wav |
+| Audio | .flac, .m4a, .mp3, .ogg, .wav |
 | [HyperText (HTML)](#Import-HTML-data) | .html, .htm, .xml |
 | Images | .bmp, .gif, .jpg, .png, .svg, .webp |
 | Paragraphs (Dialogue) | .json |
@@ -32,9 +63,10 @@ You can import many types of data, including text, timeseries, audio, and image 
 | [Text](#Plain-text) | .txt, .json |
 | [Time series](#Import-CSV-or-TSV-data) | .csv, .tsv, .json |
 | [Tasks with multiple data types](#Basic-Label-Studio-JSON-format) | .csv, .tsv, .json |
-| Video | .mp4, .webm, .avi |
+| Video | .mp4, .webm |
 
-If you don't see a supported data or file type that you want to import, reach out in the [Label Studio Slack community](https://slack.labelstudio.heartex.com/?source=docs-gdi). 
+If you don't see a supported data or file type that you want to import, please let us know by submitting an issue to the <a className="no-go" href="https://github.com/humansignal/label-studio/issues">Label Studio Repository</a>.
+
 
 ### How to import your data
 
@@ -190,7 +222,7 @@ Use this parameter to retrieve data from multi-column csv on [S3 or other cloud 
 
 If you import a file with a list of tasks, and every task in this list is a link to another file in the storage. In this case, you can use the `resolver` parameter to retrieve the content of these files from a storage. 
 
-**Use case**
+#### Use Case
 
 There is a list of tasks, where the "remote" field of every task is a link to a CSV file in the storage. Every CSV file has a “text” column with text to be labeled. Every CSV file has a “text” column with text to be labeled. For example:
 
@@ -208,7 +240,7 @@ id;text
 12;The most flexible data annotation tool. Quickly installable. Build custom UIs or use pre-built labeling templates.
 ```
 
-**Solution**
+#### Solution
 
 To retrieve the file, use the following parameters:
 
@@ -218,7 +250,7 @@ To retrieve the file, use the following parameters:
 
 3. Display the result.
 
-**Syntax**
+#### Syntax
 
 The syntax for the `resolver` parameter consists of a list of options separated by a `|` symbol.
 
@@ -256,8 +288,7 @@ Depending on the type of object tag, Label Studio interprets field values differ
 - `<Text value="$key">`: `value` is interpreted as plain text.
 - `<HyperText value="$key">`: `value` is interpreted as HTML markup.
 - `<HyperText value="$key" encoding="base64">`: `value` is interpreted as a base64 encoded HTML markup.
-- `<Audio value="$key">`: `value` is interpreted as a valid URL to an audio file.
-- `<AudioPlus value="$key">`: `value` is interpreted as a valid URL to an audio file with CORS policy enabled on the server side.
+- `<Audio value="$key">`: `value` is interpreted as a valid URL to an audio file with CORS policy enabled on the server side.
 - `<Image value="$key">`: `value` is interpreted as a valid URL to an image file
 - `<TimeSeries value="$key">`: `value` is interpreted as a valid URL to a CSV/TSV file if `valueType="url"`, otherwise it is interpreted as a JSON dictionary with column arrays: `"value": {"first_column": [...], ...}` if `valueType="json"`. See more about [how to use valueType](#How-to-import-your-data).
     
@@ -483,6 +514,13 @@ If you're running Label Studio on Docker and want to add local file storage, you
 
 
 ## Import data from the Label Studio UI
+
+!!! warning
+    For large projects or business critical projects, do not upload media files through the Label Studio interface. This is especially true for files such as images, audio, video, timeseries, etc.  
+    
+    Uploading data through the Label Studio UI works fine for proof of concept projects, but it is not recommended for larger projects. You will also face challenges when you want export your data or move it to another Label Studio instance or even just redeploy Label Studio. Finally, Label Studio is not designed as a hosting service at scale and does not have backups for imported media resources. 
+    
+    We strongly recommend that you configure [source storage](storage) instead.
 
 To import data from the Label Studio UI, do the following:
 1. On the Label Studio UI, open the Data Manager page for a specific project.
