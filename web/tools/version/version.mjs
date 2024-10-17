@@ -109,11 +109,11 @@ const versionLib = async () => {
   if (currentPwd.includes("node_modules")) {
     const [_workspaceRoot, nodeModulesPath, _currentProjectPath] = currentPwd.split("web");
     workspaceRoot = path.join(_workspaceRoot, "web", nodeModulesPath);
-    currentProjectPath = _currentProjectPath;
+    currentProjectPath = _currentProjectPath || '';
   } else {
     const [_workspaceRoot, _currentProjectPath] = currentPwd.split("web");
-    workspaceRoot = _workspaceRoot;
-    currentProjectPath = _currentProjectPath;
+    workspaceRoot = _workspaceRoot || '';
+    currentProjectPath = _currentProjectPath || '';
   }
   const distPath = path.join(workspaceRoot, "web", "dist", currentProjectPath);
 

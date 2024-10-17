@@ -10,7 +10,7 @@ ENV BUILD_NO_SERVER=true \
     YARN_CACHE_FOLDER=/root/web/.yarn \
     NODE_ENV=production
 
-WORKDIR /label-studio/web
+WORKDIR /label-studio
 
 # Fix Docker Arm64 Build
 RUN yarn config set registry https://registry.npmjs.org/
