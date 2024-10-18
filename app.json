@@ -17,12 +17,12 @@
     },
     "USERNAME": {
       "description": "Username(email) for default user",
-      "value": "",
+      "value": "matias@cogniflow.ai",
       "required": false
     },
     "PASSWORD": {
       "description": "Password for default user",
-      "value": "",
+      "value": "matias",
       "required": false
     }
   },

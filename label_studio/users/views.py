@@ -1,5 +1,6 @@
 """This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
 """
+import json
 import logging
 import os
 
@@ -15,8 +16,10 @@ from django.utils.http import is_safe_url
 from organizations.forms import OrganizationSignupForm
 from organizations.models import Organization
 from rest_framework.authtoken.models import Token
+from rest_framework.response import Response
 from users import forms
 from users.functions import login, proceed_registration
+from users.models import User
 
 logger = logging.getLogger()
 
@@ -151,3 +154,28 @@ def user_account(request):
         'users/user_account.html',
         {'settings': settings, 'user': user, 'user_profile_form': form, 'token': token},
     )
+
+
+@login_required
+def change_password(request):
+    user_data = json.loads(request.body.decode('utf-8'))
+
+    if 'secret_token' not in user_data:
+        return Response({ "error": "Unauthorized, secret token is required" }, 401)
+
+    if user_data['secret_token'] != os.environ.get('LABEL_STUDIO_SECRET_TOKEN'):
+        return Response({ "error": "Unauthorized, secret token is invalid" }, 401)
+
+
+    user = User.objects.filter(email=user_data["email"]).get()
+
+    if not user:
+        return Response({ "error": "User does not exist" }, 400)
+
+
+    user.set_password(user_data["password"])
+
+    user.save()
+
+
+    return Response({ "message": "OK"}, 201)
