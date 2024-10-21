@@ -10,7 +10,7 @@ ENV BUILD_NO_SERVER=true \
     YARN_CACHE_FOLDER=/root/web/.yarn \
     NODE_ENV=production
 
-WORKDIR /label-studio
+WORKDIR /label-studio/web
 
 # Fix Docker Arm64 Build
 RUN yarn config set registry https://registry.npmjs.org/
@@ -32,7 +32,6 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LS_DIR=/label-studio \
-    HOME=/label-studio \
     PIP_CACHE_DIR=$HOME/.cache \
     POETRY_CACHE_DIR=$HOME/.poetry-cache \
     POETRY_VIRTUALENVS_CREATE=false \
@@ -87,8 +86,7 @@ COPY --chown=1001:0 licenses licenses
 COPY --chown=1001:0 label_studio label_studio
 COPY --chown=1001:0 deploy deploy
 
-RUN mkdir -p $LS_DIR/web/dist
-COPY --chown=1001:0 --from=frontend-builder ./label-studio/dist $LS_DIR/web/dist
+COPY --chown=1001:0 --from=frontend-builder /label-studio/web/dist $LS_DIR/web/dist
 
 RUN python3 label_studio/manage.py collectstatic --no-input && \
     chown -R 1001:0 $LS_DIR && \
