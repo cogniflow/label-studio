@@ -32,6 +32,7 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LS_DIR=/label-studio \
+    HOME=/tmp \
     PIP_CACHE_DIR=$HOME/.cache \
     POETRY_CACHE_DIR=$HOME/.poetry-cache \
     POETRY_VIRTUALENVS_CREATE=false \
@@ -73,7 +74,17 @@ RUN set -eux; \
 COPY --chown=1001:0 pyproject.toml .
 COPY --chown=1001:0 poetry.lock .
 COPY --chown=1001:0 README.md .
-COPY --chown=1001:0 label_studio/__init__.py ./label_studio/__init__.py
+COPY --chown=1001:0 label_studio/__init__.py ./label-studio/__init__.py
+
+RUN mkdir -p /label-studio/data/test_data && \
+    mkdir -p /label-studio/data/projects && \
+    mkdir -p /label-studio/data/labeling_jobs && \
+    chown -R 1001:0 /label-studio/data
+
+COPY --chown=1001:0 LICENSE /label-studio/LICENSE
+COPY --chown=1001:0 licenses /label-studio/licenses
+COPY --chown=1001:0 label_studio /label-studio/label_studio
+COPY --chown=1001:0 deploy /label-studio/deploy
 
 # Ensure the poetry lockfile is up to date, then install all deps from it to
 # the system python. This includes label-studio itself. For caching purposes,
@@ -81,22 +92,17 @@ COPY --chown=1001:0 label_studio/__init__.py ./label_studio/__init__.py
 RUN --mount=type=cache,target=$POETRY_CACHE_DIR \
     poetry check --lock && poetry install
 
-COPY --chown=1001:0 LICENSE LICENSE
-COPY --chown=1001:0 licenses licenses
-COPY --chown=1001:0 label_studio label_studio
-COPY --chown=1001:0 deploy deploy
-
 COPY --chown=1001:0 --from=frontend-builder /label-studio/web/dist $LS_DIR/web/dist
 
 RUN python3 label_studio/manage.py collectstatic --no-input && \
     chown -R 1001:0 $LS_DIR && \
-    chmod -R g=u $LS_DIR
+    chmod -R 755 $LS_DIR
 
 ENV HOME=$LS_DIR
 
 EXPOSE 8080
 
-USER 1001
+USER root
 
 ENTRYPOINT ["./deploy/docker-entrypoint.sh"]
 CMD ["label-studio"]

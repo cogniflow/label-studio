@@ -42,8 +42,8 @@ services:
       - LABEL_STUDIO_HOST=${LABEL_STUDIO_HOST:-}
       - JSON_LOG=1
       - LOG_LEVEL=DEBUG
-    volumes:
-      - ./mydata:/label-studio/data:rw
+    # volumes:
+    #   - ./mydata:/label-studio/data:rw
     extra_hosts:
       - "host.docker.internal:host-gateway"
       # keep in sync with deploy/docker-entrypoint.d/30-copy-static-data.sh
