@@ -57,6 +57,14 @@ def check_avatar(files):
 
 def save_user(request, next_page, user_form):
     """Save user instance to DB"""
+    token = request.GET.get('token', None)
+    # token = request['token'] if 'token' in request else None
+
+    print(request, request.POST, token)
+
+    if token is None:
+        raise Exception('Unauthorized operation')
+
     user = user_form.save()
     user.username = user.email.split('@')[0]
     user.save()
