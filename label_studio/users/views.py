@@ -156,7 +156,6 @@ def user_account(request):
     )
 
 
-@login_required
 def change_password(request):
     user_data = json.loads(request.body.decode('utf-8'))
 
@@ -168,14 +167,11 @@ def change_password(request):
 
 
     user = User.objects.filter(email=user_data["email"]).get()
-
     if not user:
         return Response({ "error": "User does not exist" }, 400)
-
 
     user.set_password(user_data["password"])
 
     user.save()
-
 
     return Response({ "message": "OK"}, 201)
