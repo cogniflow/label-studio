@@ -293,7 +293,8 @@ class OrganizationResetTokenAPI(APIView):
     ),
 )
 class OrgHandler(APIView):
-    permission_required = all_permissions.organizations_create
+    parser_classes = (JSONParser,)
+    permission_classes = ()
 
     def post(self, request, *args, **kwargs):
         user_data = json.loads(request.body.decode('utf-8'))
