@@ -281,9 +281,19 @@ class OrganizationResetTokenAPI(APIView):
         serializer.is_valid()
         return Response(serializer.data, status=201)
 
-
+@method_decorator(
+    name='post',
+    decorator=swagger_auto_schema(
+        tags=['Create Organization'],
+        x_fern_sdk_group_name='organizations',
+        x_fern_sdk_method_name='create_organization',
+        operation_summary='Create an organization',
+        operation_description='Creates a user and an organization with the user as the owner.',
+        responses={201: OrganizationSerializer()},
+    ),
+)
 class OrgHandler(APIView):
-    permission_classes = [all_permissions.organizations_create, all_permissions.organizations_invite]
+    permission_required = all_permissions.organizations_create
 
     def post(self, request, *args, **kwargs):
         user_data = json.loads(request.body.decode('utf-8'))
