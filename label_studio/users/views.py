@@ -17,6 +17,7 @@ from organizations.forms import OrganizationSignupForm
 from organizations.models import Organization
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
+from rest_framework.decorators import api_view
 from users import forms
 from users.functions import login, proceed_registration
 from users.models import User
@@ -156,22 +157,27 @@ def user_account(request):
     )
 
 
+@api_view(['POST'])
 def change_password(request):
-    user_data = json.loads(request.body.decode('utf-8'))
+    try:
+        user_data = json.loads(request.body.decode('utf-8'))
 
-    if 'secret_token' not in user_data:
-        return Response({ "error": "Unauthorized, secret token is required" }, 401)
+        if 'secret_token' not in user_data:
+            return Response({"error": "Unauthorized, secret token is required"}, status=401)
 
-    if user_data['secret_token'] != os.environ.get('LABEL_STUDIO_SECRET_TOKEN'):
-        return Response({ "error": "Unauthorized, secret token is invalid" }, 401)
+        if user_data['secret_token'] != os.environ.get('LABEL_STUDIO_SECRET_TOKEN'):
+            return Response({"error": "Unauthorized, secret token is invalid"}, status=401)
 
+        try:
+            user = User.objects.get(email=user_data["email"])
+        except User.DoesNotExist:
+            return Response({"error": "User does not exist"}, status=400)
 
-    user = User.objects.filter(email=user_data["email"]).get()
-    if not user:
-        return Response({ "error": "User does not exist" }, 400)
+        user.set_password(user_data["password"])
+        user.save()
 
-    user.set_password(user_data["password"])
-
-    user.save()
-
-    return Response({ "message": "OK"}, 201)
+        return Response({"message": "OK"}, status=201)
+    except json.JSONDecodeError:
+        return Response({"error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
