@@ -102,6 +102,12 @@
         "decorators": ""
     },
     {
+        "url": "/api/organizations/create",
+        "module": "organizations.api.OrganizationCreateAPI",
+        "name": "organizations:api:organization-create",
+        "decorators": ""
+    },
+    {
         "url": "/api/invite",
         "module": "organizations.api.OrganizationInviteAPI",
         "name": "organizations:organization-invite",
