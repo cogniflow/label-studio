@@ -17,7 +17,8 @@ from organizations.forms import OrganizationSignupForm
 from organizations.models import Organization
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
+from rest_framework.permissions import AllowAny
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from users import forms
 from users.functions import login, proceed_registration
 from users.models import User
@@ -158,6 +159,8 @@ def user_account(request):
 
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@authentication_classes([])
 def change_password(request):
     try:
         user_data = json.loads(request.body.decode('utf-8'))
