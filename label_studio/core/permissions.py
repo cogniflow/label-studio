@@ -11,6 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 class AllPermissions(BaseModel):
+    model_config = {
+        'protected_namespaces': ()  # Disable the protection for reserved namespaces
+    }
+
     organizations_create: str = 'organizations.create'
     organizations_view: str = 'organizations.view'
     organizations_change: str = 'organizations.change'

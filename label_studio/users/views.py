@@ -12,7 +12,7 @@ from django.contrib import auth
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render, reverse
-from django.utils.http import is_safe_url
+from django.utils.http import url_has_allowed_host_and_scheme
 from organizations.forms import OrganizationSignupForm
 from organizations.models import Organization
 from rest_framework.authtoken.models import Token
@@ -43,7 +43,7 @@ def user_signup(request):
     token = request.GET.get('token')
 
     # checks if the URL is a safe redirection.
-    if not next_page or not is_safe_url(url=next_page, allowed_hosts=request.get_host()):
+    if not next_page or not url_has_allowed_host_and_scheme(url=next_page, allowed_hosts=request.get_host()):
         next_page = reverse('projects:project-index')
 
     user_form = forms.UserSignupForm()
@@ -101,7 +101,7 @@ def user_login(request):
     next_page = request.GET.get('next')
 
     # checks if the URL is a safe redirection.
-    if not next_page or not is_safe_url(url=next_page, allowed_hosts=request.get_host()):
+    if not next_page or not url_has_allowed_host_and_scheme(url=next_page, allowed_hosts=request.get_host()):
         next_page = reverse('projects:project-index')
 
     login_form = load_func(settings.USER_LOGIN_FORM)
