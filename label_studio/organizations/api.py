@@ -282,31 +282,31 @@ class OrganizationResetTokenAPI(APIView):
         return Response(serializer.data, status=201)
 
 
-# class OrgHandler(APIView):
-#     permission_classes = [all_permissions.AllowAny]
+class OrgHandler(APIView):
+    permission_classes = [all_permissions.AllowAny]
 
-#     def post(self, request, *args, **kwargs):
-#         user_data = json.loads(request.body.decode('utf-8'))
-#         user_query_dict = QueryDict('email='+user_data['email']+'&password='+user_data['password'])
-#         user_form = UserSignupForm(user_query_dict)
+    def post(self, request, *args, **kwargs):
+        user_data = json.loads(request.body.decode('utf-8'))
+        user_query_dict = QueryDict('email='+user_data['email']+'&password='+user_data['password'])
+        user_form = UserSignupForm(user_query_dict)
         
-#         if 'secret_token' not in user_data:
-#             return Response({ "error": "Unauthorized, secret token is required" }, 401)
+        if 'secret_token' not in user_data:
+            return Response({ "error": "Unauthorized, secret token is required" }, 401)
 
-#         if user_data['secret_token'] != os.environ.get('LABEL_STUDIO_SECRET_TOKEN'):
-#             return Response({ "error": "Unauthorized, secret token is invalid" }, 401)
+        if user_data['secret_token'] != os.environ.get('LABEL_STUDIO_SECRET_TOKEN'):
+            return Response({ "error": "Unauthorized, secret token is invalid" }, 401)
 
-#         if user_form.is_valid():
-#             user = user_form.save()
-#             user.username = user.email.split('@')[0]
-#             user.save()
+        if user_form.is_valid():
+            user = user_form.save()
+            user.username = user.email.split('@')[0]
+            user.save()
 
-#             org_title = user.username + '\'s' + ' organization'
-#             org = Organization.create_organization(created_by=user, title=org_title)
-#             org.add_user(user)
-#             user.active_organization = org
-#             user.save(update_fields=['active_organization'])
+            org_title = user.username + '\'s' + ' organization'
+            org = Organization.create_organization(created_by=user, title=org_title)
+            org.add_user(user)
+            user.active_organization = org
+            user.save(update_fields=['active_organization'])
 
-#             return Response({ "org_id": org.id }, 201)
-#         else:
-#             return Response({ "error": "Either invalid email or user already exists" }, 400)
+            return Response({ "org_id": org.id }, 201)
+        else:
+            return Response({ "error": "Either invalid email or user already exists" }, 400)
