@@ -1,10 +1,10 @@
 ---
-title: Speaker Segmentation
+title: Speaker Diarization
 type: templates
 category: Audio/Speech Processing
 cat: audio-speech-processing
-order: 303
-meta_title: Speaker Segmentation Data Labeling Template
+order: 304
+meta_title: Speaker Diarization (Segmentation) Data Labeling Template
 meta_description: Template for segmenting an audio clip based on speaker with Label Studio for your machine learning and data science projects.
 ---
 
@@ -12,9 +12,7 @@ meta_description: Template for segmenting an audio clip based on speaker with La
 
 When preparing audio transcripts or training a machine learning model to differentiate between different speakers, use this template to perform speaker segmentation and label different regions of an audio clip with different speakers. 
 
-## Template Preview
-
-Interactively preview this labeling template:
+## Interactive Template Preview
 
 <div id="main-preview"></div>
 
@@ -22,19 +20,33 @@ Interactively preview this labeling template:
 
 ```html
 <View>
-    <!--Use the Labels control tag to allow annotators to highlight specific
-    regions of the audio clip, zoom, and use a hotkey to apply labels.-->
   <Labels name="label" toName="audio" zoom="true" hotkey="ctrl+enter">
     <Label value="Speaker one" background="#00FF00"/>
     <Label value="Speaker two" background="#12ad59"/>
   </Labels>
-    <!--Use the AudioPlus object tag to display a waveform of audio-->
-  <AudioPlus name="audio" value="$audio" />
+  <Audio name="audio" value="$audio" />
 </View>
+```
+
+## About the labeling configuration
+
+All labeling configurations must be wrapped in [View](/tags/view.html) tags.
+
+Use the [Labels](/tags/labels.html) control tag to allow annotators to highlight specific regions of the audio clip and apply a label:
+```xml
+<Labels name="label" toName="audio" zoom="true" hotkey="ctrl+enter">
+    <Label value="Speaker one" background="#00FF00"/>
+    <Label value="Speaker two" background="#12ad59"/>
+</Labels>
+```
+
+Use the [Audio](/tags/audio.html) object tag to display a waveform of audio and allow annotators to change the speed of the audio playback:
+```xml
+<Audio name="audio" value="$audio" />
 ```
 
 ## Related tags
 
 - [Labels](/tags/labels.html)
-- [AudioPlus](/tags/audioplus.html)
+- [Audio](/tags/audio.html)
 

@@ -1,20 +1,19 @@
 """This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
 """
-import re
 import json
-from django import template
+import re
 from datetime import datetime
-from django.utils.safestring import mark_safe
+
+from django import template
 from django.conf import settings
-from django.template.loader_tags import do_include
+from django.utils.html import format_html
 
 register = template.Library()
 
 
 @register.filter
-def initials(val, jn=""):
-    """ Given a string return its initials join by $jn
-    """
+def initials(val, jn=''):
+    """Given a string return its initials join by $jn"""
     res = []
     parts = val.split(' ')
     if len(parts) <= 1:
@@ -22,15 +21,15 @@ def initials(val, jn=""):
         print(parts)
 
     if len(parts) > 1:
-        res = [ parts[0][0], parts[1][0] ]
+        res = [parts[0][0], parts[1][0]]
     elif len(parts) == 1:
-        res = [ val[0], val[1] ]
-        
+        res = [val[0], val[1]]
+
     return jn.join(res).upper()
-        
+
 
 @register.filter
-def get_at_index(l, index):
+def get_at_index(l, index):  # noqa: E741
     return l[index]
 
 
@@ -76,7 +75,7 @@ def collaborator_id_in_url(id_, url):
 def date_for_license(date):
     if isinstance(date, str):
         date = datetime.strptime(date, '%Y-%m-%d')
-    return date.strftime("%d %b %Y %H:%M")
+    return date.strftime('%d %b %Y %H:%M')
 
 
 @register.filter
@@ -102,8 +101,8 @@ def multiply(value, arg):
 def custom_autocomplete(key=''):
     if settings.LICENSE.get('disable_autocomplete', False):
         if key == 'password':
-            return mark_safe('autocomplete="new-password"')
-        return mark_safe('autocomplete="off"')
+            return format_html('autocomplete="new-password"')
+        return format_html('autocomplete="off"')
     else:
         return ''
 
@@ -116,26 +115,3 @@ def var_exists(context, name):
             if name in d:
                 return True
     return False
-
-
-class TryIncludeNode(template.Node):
-    """
-    A Node that instantiates an IncludeNode but wraps its render() in a
-    try/except in case the template doesn't exist.
-    """
-    def __init__(self, parser, token):
-        self.include_node = do_include(parser, token)
-
-    def render(self, context):
-        try:
-            return self.include_node.render(context)
-        except template.TemplateDoesNotExist:
-            return ''
-
-
-@register.tag('try_include')
-def try_include(parser, token):
-    """
-    Include the specified template but only if it exists.
-    """
-    return TryIncludeNode(parser, token)

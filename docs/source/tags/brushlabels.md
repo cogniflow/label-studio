@@ -6,9 +6,9 @@ meta_title: Brush Label Tag for Image Segmentation Labeling
 meta_description: Customize Label Studio with brush label tags for image segmentation labeling for machine learning and data science projects.
 ---
 
-Use the BrushLabels tag for image segmentation tasks where you want to apply a mask or use a brush to draw a region on the image.
+The `BrushLabels` tag for image segmentation tasks is used in the area where you want to apply a mask or use a brush to draw a region on the image.
 
-Use with the following data types: image
+Use with the following data types: image.
 
 ### Parameters
 
@@ -24,11 +24,11 @@ Use with the following data types: image
 
 | Name | Type | Description |
 | --- | --- | --- |
-| original_width | <code>number</code> | width of the original image (px) |
-| original_height | <code>number</code> | height of the original image (px) |
-| image_rotation | <code>number</code> | rotation degree of the image (deg) |
+| original_width | <code>number</code> | Width of the original image (px) |
+| original_height | <code>number</code> | Height of the original image (px) |
+| image_rotation | <code>number</code> | Rotation degree of the image (deg) |
 | value | <code>Object</code> |  |
-| value.format | <code>&quot;rle&quot;</code> | format of the masks, only RLE is supported for now |
+| value.format | <code>&quot;rle&quot;</code> | Format of the masks, only RLE is supported for now |
 | value.rle | <code>Array.&lt;number&gt;</code> | RLE-encoded image |
 
 ### Example JSON
@@ -46,8 +46,10 @@ Use with the following data types: image
 ```
 
 ### Example
+
+Basic image segmentation labeling configuration
+
 ```html
-<!--Basic image segmentation labeling configuration-->
 <View>
   <BrushLabels name="labels" toName="image">
     <Label value="Person" />
